@@ -13,7 +13,7 @@
 // =====================================================
 
 window.SUPABASE_CONFIG = {
-  SUPABASE_URL: 'https://vqnwdiuxfpibceroglmq.supabase.co/rest/v1/',
+  SUPABASE_URL: 'https://vqnwdiuxfpibceroglmq.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxbndkaXV4ZnBpYmNlcm9nbG1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0Njg1MDQsImV4cCI6MjA5NTA0NDUwNH0.qkVjv4YED9Vmcg_qDvbgHiFSqXdNn3ZEgl0mzCniaHA',
 
   // Storage bucket name — leave this as 'vehicles' unless you renamed it
