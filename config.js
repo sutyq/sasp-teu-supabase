@@ -14,7 +14,7 @@
 
 window.SUPABASE_CONFIG = {
   SUPABASE_URL: 'https://vqnwdiuxfpibceroglmq.supabase.co/rest/v1/',
-  SUPABASE_ANON_KEY: 'sb_secret_JaXwR7SMTAo3OC1tcus4rg_u0J9HO65',
+  SUPABASE_ANON_KEY: 'sb_publishable_eO5EM4-uCQWZsWz9e8z2iA_6h9Fsxgf',
 
   // Storage bucket name — leave this as 'vehicles' unless you renamed it
   STORAGE_BUCKET: 'vehicles',
