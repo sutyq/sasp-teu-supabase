@@ -301,16 +301,17 @@ function useAuth() {
   }, []);
 
   // When session changes, check if user is in officers table
-  useEffect(() => {
+  const refreshOfficer = useCallback(() => {
     if (!supabase || !session) { setOfficer(null); return; }
-    let mounted = true;
     supabase.from('officers').select('*').eq('email', session.user.email).maybeSingle()
-      .then(({ data }) => { if (mounted) setOfficer(data); });
-    return () => { mounted = false; };
+      .then(({ data }) => setOfficer(data));
   }, [session]);
 
-  return { session, officer, loading };
-}
+  useEffect(() => {
+    refreshOfficer();
+  }, [refreshOfficer]);
+
+  return { session, officer, loading, refreshOfficer };
 
 // ============================================================
 // SHARED COMPONENTS
@@ -345,7 +346,7 @@ function ConnectionStatus({ connected, syncing }) {
   );
 }
 
-function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, connected, syncing }) {
+function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, connected, syncing }) {
   const { officer, session } = auth;
   const isOfficer = !!officer;
 
@@ -396,6 +397,14 @@ function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, connected, s
                     title="Odhlásit se">
               <Icons.LogOut size={14} />
             </button>
+            {officer.is_admin && (
+              <button onClick={onAdminPanel}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border
+                                 bg-amber-500/10 border-amber-400/40 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400/70">
+                <Icons.Shield size={14} />
+                <span className="hidden sm:inline">Admin</span>
+              </button>
+            )}
           </div>
         ) : (
           <button onClick={onLogin}
@@ -1136,7 +1145,232 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
     </motion.div>
   );
 }
+// ============================================================
+// ADMIN PANEL - správa officerů
+// ============================================================
+function AdminPanel({ open, onClose, currentUserEmail }) {
+  const [officers, setOfficers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newIsAdmin, setNewIsAdmin] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [confirmRemove, setConfirmRemove] = useState(null);
 
+  async function loadOfficers() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('officers')
+      .select('*')
+      .order('granted_at', { ascending: false });
+    if (error) setError(error.message);
+    else setOfficers(data || []);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    loadOfficers();
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  async function addOfficer(e) {
+    e.preventDefault();
+    setError('');
+    if (!newEmail.trim()) { setError('Email je povinný'); return; }
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('officers').insert({
+        email: newEmail.trim().toLowerCase(),
+        display_name: newName.trim() || null,
+        is_admin: newIsAdmin,
+      });
+      if (error) throw error;
+      setNewEmail(''); setNewName(''); setNewIsAdmin(false);
+      await loadOfficers();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeOfficer(officer) {
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('officers').delete().eq('id', officer.id);
+      if (error) throw error;
+      await loadOfficers();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+      setConfirmRemove(null);
+    }
+  }
+
+  async function toggleAdmin(officer) {
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('officers')
+        .update({ is_admin: !officer.is_admin })
+        .eq('id', officer.id);
+      if (error) throw error;
+      await loadOfficers();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <Icons.Shield size={18} className="text-sasp-glow" />
+            <h2 className="font-display font-bold text-lg tracking-wider text-sasp-ice">TEU Admin Panel</h2>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/50">Officer Management</span>
+          </div>
+          <button onClick={onClose}
+                  className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition">
+            <Icons.Close size={16} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Add new officer */}
+          <div>
+            <SectionTitle icon={<Icons.Plus size={14} />} text="Přidat officera" />
+            <form onSubmit={addOfficer} className="space-y-3 rounded-md glass p-4 border border-sasp-glow/15">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">E-mail *</label>
+                  <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+                         placeholder="officer@example.com" required />
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Jméno (volitelné)</label>
+                  <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
+                         placeholder="např. Petr" />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
+                <input type="checkbox" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)}
+                       className="!w-auto accent-sasp-glow" />
+                <span>Udělit admin práva (může spravovat ostatní)</span>
+              </label>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 leading-relaxed">
+                ⚠️ Aby se officer mohl přihlásit, musí si nejprve sám vytvořit účet
+                přes "Officer login → Vytvořit nový účet" se stejným emailem.
+              </p>
+              <button type="submit" disabled={busy}
+                      className="flex items-center gap-2 px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition border bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-50">
+                {busy ? <Icons.Loader size={12} /> : <Icons.Plus size={12} />}
+                <span>{busy ? 'Přidávám...' : 'Přidat officera'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Officer list */}
+          <div>
+            <SectionTitle icon={<Icons.Shield size={14} />} text={`Současní officeři (${officers.length})`} />
+            {loading ? (
+              <div className="py-8 text-center">
+                <Icons.Loader size={24} className="mx-auto text-sasp-glow/60" />
+              </div>
+            ) : officers.length === 0 ? (
+              <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-sasp-glow/50">
+                Žádní officeři
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {officers.map(o => {
+                  const isSelf = o.email === currentUserEmail;
+                  return (
+                    <div key={o.id} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15">
+                      <div className="flex items-center justify-center w-10 h-10 rounded-md bg-sasp-glow/10 border border-sasp-glow/30">
+                        {o.is_admin ? <Icons.Shield size={18} className="text-amber-400" /> : <Icons.Shield size={18} className="text-sasp-glow/70" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || o.email}</span>
+                          {o.is_admin && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-amber-500/20 border border-amber-400/40 text-amber-300">
+                              Admin
+                            </span>
+                          )}
+                          {isSelf && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-sasp-glow/20 border border-sasp-glow/40 text-sasp-glow">
+                              Ty
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-mono text-[10px] text-sasp-glow/50 truncate">{o.email}</div>
+                      </div>
+                      <button onClick={() => toggleAdmin(o)} disabled={busy || isSelf}
+                              title={o.is_admin ? 'Odebrat admin práva' : 'Udělit admin práva'}
+                              className={`p-2 rounded-md border transition disabled:opacity-30 disabled:cursor-not-allowed
+                                          ${o.is_admin
+                                            ? 'border-amber-400/40 text-amber-400 hover:bg-amber-500/10'
+                                            : 'border-sasp-glow/20 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
+                        <Icons.Shield size={14} />
+                      </button>
+                      <button onClick={() => setConfirmRemove(o)} disabled={busy || isSelf}
+                              title={isSelf ? 'Nemůžeš odebrat sám sebe' : 'Odebrat officera'}
+                              className="p-2 rounded-md border border-red-400/30 text-red-400/80 hover:text-red-400 hover:border-red-400/60 transition disabled:opacity-30 disabled:cursor-not-allowed">
+                        <Icons.Trash size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Confirm remove dialog */}
+        <AnimatePresence>
+          {confirmRemove && (
+            <ConfirmDialog
+              open={!!confirmRemove}
+              title="Odebrat officera?"
+              message={`Opravdu chceš odebrat ${confirmRemove.display_name || confirmRemove.email}? Ztratí přístup k editaci. Jeho účet v Auth zůstane zachován.`}
+              confirmText="Odebrat"
+              danger
+              onCancel={() => setConfirmRemove(null)}
+              onConfirm={() => removeOfficer(confirmRemove)}
+            />
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </motion.div>
+  );
+}
 // ============================================================
 // CONFIRM DIALOG
 // ============================================================
@@ -1224,6 +1458,7 @@ function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorVehicle, setEditorVehicle] = useState(null);  // null = add, obj = edit
+  const [adminOpen, setAdminOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -1469,6 +1704,7 @@ function App() {
         onLogin={() => setLoginOpen(true)}
         onLogout={handleLogout}
         onAddVehicle={() => { setEditorVehicle(null); setEditorOpen(true); }}
+        onAdminPanel={() => setAdminOpen(true)}
         connected={connected}
         syncing={syncing}
       />
@@ -1630,6 +1866,16 @@ function App() {
 
       <AnimatePresence>
         {loginOpen && <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {adminOpen && (
+          <AdminPanel
+            open={adminOpen}
+            onClose={() => setAdminOpen(false)}
+            currentUserEmail={auth.session?.user?.email}
+          />
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
