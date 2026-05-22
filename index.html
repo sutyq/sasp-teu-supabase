@@ -1,0 +1,1654 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>SASP · TEU · Databáze lokátorů</title>
+<meta name="description" content="San Andreas State Police — Traffic Enforcement Unit. Interní databáze suspect vozidel s realtime sync přes Supabase." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23050912'/%3E%3Cpath d='M50 12 L82 24 V52 C82 70 67 84 50 90 C33 84 18 70 18 52 V24 Z' fill='none' stroke='%2360a5fa' stroke-width='4'/%3E%3Ctext x='50' y='60' font-family='monospace' font-size='28' font-weight='bold' text-anchor='middle' fill='%2360a5fa'%3ETEU%3C/text%3E%3C/svg%3E" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Rajdhani:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/framer-motion@11.3.19/dist/framer-motion.js"></script>
+<script crossorigin src="https://unpkg.com/fuse.js@7.0.0/dist/fuse.min.js"></script>
+<script crossorigin src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone@7.25.0/babel.min.js"></script>
+
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        display: ['Rajdhani', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['Inter', 'sans-serif'],
+      },
+      colors: {
+        sasp: {
+          black: '#04060c', carbon: '#080c16', steel: '#0d1424',
+          navy: '#0b1d3a', deep: '#0e2a5a', royal: '#1e4e9c',
+          accent: '#3b82f6', glow: '#60a5fa', ice: '#cbe4ff',
+        },
+      },
+      animation: {
+        'grid-drift': 'gridDrift 30s linear infinite',
+        'shimmer': 'shimmer 2.4s linear infinite',
+      },
+      keyframes: {
+        gridDrift: { '0%': { backgroundPosition: '0 0' }, '100%': { backgroundPosition: '60px 60px' } },
+        shimmer: { '0%': { backgroundPosition: '-200% 0' }, '100%': { backgroundPosition: '200% 0' } },
+      },
+    },
+  },
+};
+</script>
+
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    background: #04060c; color: #cbe4ff;
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    overflow-x: hidden;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(59,130,246,0.18), transparent 60%),
+      radial-gradient(ellipse 60% 50% at 100% 100%, rgba(30,78,156,0.12), transparent 60%),
+      radial-gradient(ellipse 60% 50% at 0% 100%, rgba(14,42,90,0.15), transparent 60%),
+      #04060c;
+  }
+  .grid-bg::before {
+    content: ''; position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(96,165,250,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(96,165,250,0.06) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: gridDrift 30s linear infinite;
+    pointer-events: none; z-index: 0;
+    mask-image: radial-gradient(ellipse 100% 80% at 50% 30%, black 40%, transparent 90%);
+    -webkit-mask-image: radial-gradient(ellipse 100% 80% at 50% 30%, black 40%, transparent 90%);
+  }
+  .scanlines::before {
+    content: ''; position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(255,255,255,0.012) 2px, rgba(255,255,255,0.012) 4px);
+    pointer-events: none; z-index: 1;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #04060c; }
+  ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #1e4e9c, #0b1d3a); border-radius: 10px; border: 2px solid #04060c; }
+  ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #3b82f6, #1e4e9c); }
+  .text-glow { text-shadow: 0 0 14px rgba(96,165,250,0.55), 0 0 30px rgba(59,130,246,0.25); }
+  .text-glow-sm { text-shadow: 0 0 8px rgba(96,165,250,0.5); }
+  .glass {
+    background: linear-gradient(135deg, rgba(13,20,36,0.85), rgba(8,12,22,0.7));
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid rgba(96,165,250,0.12);
+  }
+  .glass-strong {
+    background: linear-gradient(135deg, rgba(13,20,36,0.92), rgba(8,12,22,0.85));
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(96,165,250,0.18);
+  }
+  .clip-corners {
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  }
+  .shimmer {
+    background: linear-gradient(90deg, transparent, rgba(96,165,250,0.08), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2.4s linear infinite;
+  }
+  .glow-hover { transition: all 280ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .glow-hover:hover {
+    border-color: rgba(96,165,250,0.55);
+    box-shadow: 0 0 0 1px rgba(96,165,250,0.25), 0 0 30px rgba(59,130,246,0.25), inset 0 0 30px rgba(59,130,246,0.05);
+    transform: translateY(-2px);
+  }
+  .pulse-dot { position: relative; }
+  .pulse-dot::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 50%;
+    background: inherit; opacity: 0.5; animation: pulseRing 2s ease-out infinite;
+  }
+  @keyframes pulseRing { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(2.2); opacity: 0; } }
+  .vehicle-img {
+    filter: drop-shadow(0 12px 24px rgba(0,0,0,0.55)) drop-shadow(0 0 18px rgba(59,130,246,0.10));
+    transition: filter 400ms ease, transform 400ms ease;
+  }
+  .group:hover .vehicle-img {
+    filter: drop-shadow(0 18px 30px rgba(0,0,0,0.7)) drop-shadow(0 0 28px rgba(96,165,250,0.35));
+    transform: scale(1.03);
+  }
+  .vehicle-img-photo {
+    box-shadow: 0 10px 24px rgba(0,0,0,0.5), 0 0 18px rgba(59,130,246,0.12);
+    transition: transform 400ms ease, box-shadow 400ms ease;
+  }
+  .group:hover .vehicle-img-photo {
+    box-shadow: 0 18px 36px rgba(0,0,0,0.65), 0 0 28px rgba(96,165,250,0.35);
+    transform: scale(1.03);
+  }
+  button, [role=button] { -webkit-tap-highlight-color: transparent; }
+  .headline-emboss {
+    background: linear-gradient(180deg, #e6f0ff 0%, #93c5fd 60%, #3b82f6 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .stripes-warn {
+    background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.25) 0, rgba(0,0,0,0.25) 6px, transparent 6px, transparent 12px);
+  }
+  .tier-row {
+    display: grid; grid-template-columns: auto 1fr;
+    align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0.55rem; border-radius: 0.4rem;
+    border: 1px solid;
+    background: linear-gradient(90deg, var(--tier-bg-strong), var(--tier-bg-soft));
+  }
+  /* Form inputs */
+  input[type=text], input[type=email], input[type=password], textarea, select {
+    background: rgba(8,12,22,0.7);
+    border: 1px solid rgba(96,165,250,0.2);
+    color: #cbe4ff;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    transition: border-color 200ms, box-shadow 200ms;
+    width: 100%;
+  }
+  input[type=text]:focus, input[type=email]:focus, input[type=password]:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.15);
+  }
+  label { display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+  body.modal-open { overflow: hidden; }
+  .clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+</head>
+<body class="grid-bg scanlines min-h-screen">
+
+<div id="root"></div>
+
+<!-- Order matters: config → supabase client init → app -->
+<script src="config.js"></script>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+const { motion, AnimatePresence } = window.Motion || window.framerMotion || {};
+
+// ============================================================
+// SUPABASE CLIENT
+// ============================================================
+const CFG = window.SUPABASE_CONFIG || {};
+const SUPABASE_CONFIGURED = CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes('YOUR-PROJECT');
+const supabase = SUPABASE_CONFIGURED
+  ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY)
+  : null;
+
+// ============================================================
+// ICONS
+// ============================================================
+const Icon = ({ d, size = 20, stroke = 2, className = '' }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size}
+       viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+       className={className}>
+    {Array.isArray(d) ? d.map((p, i) => <path key={i} d={p} />) : <path d={d} />}
+  </svg>
+);
+const Icons = {
+  Search: (p) => <Icon {...p} d={["m21 21-4.3-4.3", "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"]} />,
+  Close: (p) => <Icon {...p} d={["M18 6 6 18", "m6 6 12 12"]} />,
+  Shield: (p) => <Icon {...p} d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />,
+  Car: (p) => <Icon {...p} d={["M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2", "M14 17H9", "M6.5 17.5A2.5 2.5 0 1 0 6.5 12.5a2.5 2.5 0 1 0 0 5z", "M16.5 17.5A2.5 2.5 0 1 0 16.5 12.5a2.5 2.5 0 1 0 0 5z"]} />,
+  Radio: (p) => <Icon {...p} d={["M4.9 19.1A10 10 0 0 1 4.9 4.9", "M7.8 16.2a6 6 0 0 1 0-8.4", "M12 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M16.2 7.8a6 6 0 0 1 0 8.4", "M19.1 4.9a10 10 0 0 1 0 14.2"]} />,
+  Sort: (p) => <Icon {...p} d={["m3 16 4 4 4-4", "M7 20V4", "m21 8-4-4-4 4", "M17 4v16"]} />,
+  Pin: (p) => <Icon {...p} d={["M12 17v5", "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"]} />,
+  PinFill: (p) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="currentColor" className={p.className||''}>
+      <path d="M16 3a1 1 0 0 1 1 1 2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a1 1 0 0 1-1 1h-1v3.76l2.55 1.27A1 1 0 0 1 21 14.24V16a1 1 0 0 1-1 1h-7v6h-2v-6H4a1 1 0 0 1-1-1v-1.76a1 1 0 0 1 .45-.83L6 12.76V9H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1 2 2 0 0 0 2-2 1 1 0 0 1 1-1z"/>
+    </svg>
+  ),
+  AlertTriangle: (p) => <Icon {...p} d={["M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z", "M12 9v4", "M12 17h.01"]} />,
+  Activity: (p) => <Icon {...p} d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+  Cmd: (p) => <Icon {...p} d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z" />,
+  X: (p) => <Icon {...p} d={["M18 6 6 18", "m6 6 12 12"]} />,
+  Crosshair: (p) => <Icon {...p} d={["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z", "M22 12h-4", "M6 12H2", "M12 6V2", "M12 22v-4"]} />,
+  Plus: (p) => <Icon {...p} d={["M12 5v14", "M5 12h14"]} />,
+  Edit: (p) => <Icon {...p} d={["M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7", "m18.5 2.5 3 3L10 17l-4 1 1-4z"]} />,
+  Trash: (p) => <Icon {...p} d={["M3 6h18", "m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6", "M10 11v6", "M14 11v6", "m9 6 1-3h4l1 3"]} />,
+  Upload: (p) => <Icon {...p} d={["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M17 8l-5-5-5 5", "M12 3v12"]} />,
+  Lock: (p) => <Icon {...p} d={["M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z", "M7 11V7a5 5 0 0 1 10 0v4"]} />,
+  LogOut: (p) => <Icon {...p} d={["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "m16 17 5-5-5-5", "M21 12H9"]} />,
+  Check: (p) => <Icon {...p} d="M20 6 9 17l-5-5" />,
+  Loader: (p) => <Icon {...p} d="M21 12a9 9 0 1 1-6.219-8.56" className={(p.className||'') + ' animate-spin'} />,
+  Cloud: (p) => <Icon {...p} d="M17.5 19a4.5 4.5 0 1 0-3-7.95 6 6 0 1 0-11 3h13.5" />,
+  CloudOff: (p) => <Icon {...p} d={["M2 2l20 20", "M5.78 5.78A6 6 0 0 0 8 17h12.74", "M17.5 19a4.5 4.5 0 0 0-2-8.5"]} />,
+};
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const TIER_ORDER = { 'S+': 0, 'S': 1, 'A+': 2, 'A': 3 };
+const TIER_META = {
+  'S+': { color: '#ef4444', bgStrong: 'rgba(239,68,68,0.18)', bgSoft: 'rgba(239,68,68,0.05)', label: 'KRITICKÝ',   bgFrom: 'from-red-500/20',    bgTo: 'to-red-900/5' },
+  'S':  { color: '#f97316', bgStrong: 'rgba(249,115,22,0.18)', bgSoft: 'rgba(249,115,22,0.05)', label: 'VYSOKÝ',     bgFrom: 'from-orange-500/15', bgTo: 'to-orange-900/5' },
+  'A+': { color: '#a855f7', bgStrong: 'rgba(168,85,247,0.18)', bgSoft: 'rgba(168,85,247,0.05)', label: 'ZVÝŠENÝ',    bgFrom: 'from-purple-500/15', bgTo: 'to-purple-900/5' },
+  'A':  { color: '#3b82f6', bgStrong: 'rgba(59,130,246,0.18)', bgSoft: 'rgba(59,130,246,0.05)', label: 'STANDARD',   bgFrom: 'from-blue-500/15',   bgTo: 'to-blue-900/5' },
+};
+const ALL_RESPONSE_CARS = ['Comet', 'Dominator', 'Vigero', 'Gauntlet', 'STX'];
+
+const STORAGE_KEY_PINNED = 'teu_pinned_v1';
+
+function loadSet(key) {
+  try { const raw = localStorage.getItem(key); return raw ? new Set(JSON.parse(raw)) : new Set(); }
+  catch (e) { return new Set(); }
+}
+function saveSet(key, set) {
+  try { localStorage.setItem(key, JSON.stringify(Array.from(set))); } catch (e) {}
+}
+
+function slugify(s) {
+  return (s || '').toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9\-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+// ============================================================
+// AUTH HOOK
+// ============================================================
+function useAuth() {
+  const [session, setSession] = useState(null);
+  const [officer, setOfficer] = useState(null);  // row from `officers` table if authorized
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+
+    let mounted = true;
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) {
+        setSession(data.session);
+        setLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      if (mounted) setSession(sess);
+    });
+
+    return () => { mounted = false; sub.subscription.unsubscribe(); };
+  }, []);
+
+  // When session changes, check if user is in officers table
+  useEffect(() => {
+    if (!supabase || !session) { setOfficer(null); return; }
+    let mounted = true;
+    supabase.from('officers').select('*').eq('email', session.user.email).maybeSingle()
+      .then(({ data }) => { if (mounted) setOfficer(data); });
+    return () => { mounted = false; };
+  }, [session]);
+
+  return { session, officer, loading };
+}
+
+// ============================================================
+// SHARED COMPONENTS
+// ============================================================
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const id = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(id); }, []);
+  return (
+    <div className="hidden md:flex flex-col items-end font-mono leading-tight">
+      <span className="text-xl font-bold tracking-wider text-sasp-glow text-glow-sm">{now.toLocaleTimeString('cs-CZ', { hour12: false })}</span>
+      <span className="text-[10px] uppercase tracking-[0.25em] text-sasp-glow/60">{now.toLocaleDateString('cs-CZ', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>
+    </div>
+  );
+}
+
+function ConnectionStatus({ connected, syncing }) {
+  if (syncing) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-[0.2em]">
+        <Icons.Loader size={12} className="text-yellow-400" />
+        <span className="text-yellow-300">SYNCHRONIZACE</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-[0.2em]">
+      <span className="pulse-dot block w-2 h-2 rounded-full" style={{background: connected ? '#34d399' : '#ef4444', color: connected ? '#34d399' : '#ef4444'}} />
+      <span style={{color: connected ? '#a7f3d0' : '#fca5a5'}}>{connected ? 'SYSTÉM AKTIVNÍ' : 'OFFLINE'}</span>
+      <span className="text-sasp-glow/40 px-1">·</span>
+      <span className="text-sasp-glow/70">{connected ? 'CLOUD SYNC' : 'STATIC MODE'}</span>
+    </div>
+  );
+}
+
+function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, connected, syncing }) {
+  const { officer, session } = auth;
+  const isOfficer = !!officer;
+
+  return (
+    <header className="relative z-20 border-b border-sasp-glow/10 glass-strong">
+      <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-4 flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <svg viewBox="0 0 100 100" className="w-12 h-12 text-sasp-glow drop-shadow-[0_0_12px_rgba(96,165,250,0.6)]" fill="none" stroke="currentColor" strokeWidth="3">
+              <path d="M50 10 L85 24 V54 C85 73 70 88 50 94 C30 88 15 73 15 54 V24 Z" strokeLinejoin="round" />
+              <path d="M50 18 L78 30 V54 C78 69 65 81 50 86 C35 81 22 69 22 54 V30 Z" opacity="0.35" />
+              <text x="50" y="58" fontFamily="JetBrains Mono" fontSize="22" fontWeight="800" textAnchor="middle" fill="currentColor" stroke="none">TEU</text>
+            </svg>
+            <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full ring-2 ring-sasp-black" style={{background: connected ? '#34d399' : '#71717a'}} />
+          </div>
+          <div className="leading-tight">
+            <div className="font-display font-bold text-xl md:text-2xl tracking-wider headline-emboss">
+              SAN ANDREAS STATE POLICE
+            </div>
+            <div className="font-mono text-[10px] md:text-xs uppercase tracking-[0.35em] text-sasp-glow/70">
+              Traffic Enforcement Unit · MDT
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1" />
+
+        <LiveClock />
+        <div className="hidden sm:block">
+          <ConnectionStatus connected={connected} syncing={syncing} />
+        </div>
+
+        {/* Auth state */}
+        {isOfficer ? (
+          <div className="flex items-center gap-2">
+            <button onClick={onAddVehicle}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border
+                               bg-emerald-500/10 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-400/70">
+              <Icons.Plus size={14} />
+              <span className="hidden sm:inline">Přidat</span>
+            </button>
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80">
+              <Icons.Shield size={12} className="text-emerald-400" />
+              <span className="truncate max-w-[120px]">{officer.display_name || session.user.email}</span>
+            </div>
+            <button onClick={onLogout}
+                    className="p-2 glass rounded-md text-sasp-glow/60 hover:text-red-400 hover:border-red-400/40 transition border border-sasp-glow/15"
+                    title="Odhlásit se">
+              <Icons.LogOut size={14} />
+            </button>
+          </div>
+        ) : (
+          <button onClick={onLogin}
+                  className="flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15">
+            <Icons.Lock size={12} />
+            <span>Officer login</span>
+          </button>
+        )}
+
+        <button onClick={onCommand}
+                className="hidden md:flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15">
+          <Icons.Cmd size={12} />
+          <span>⌘K</span>
+        </button>
+      </div>
+
+      <div className="border-t border-sasp-glow/10 bg-sasp-carbon/60 overflow-hidden">
+        <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-1.5 flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.25em] text-sasp-glow/60">
+          <span className={connected ? "text-emerald-400" : "text-zinc-500"}>● {connected ? 'LIVE' : 'STATIC'}</span>
+          <span className="hidden sm:inline">Databáze lokátorů v2.0 · Supabase</span>
+          <span className="text-sasp-glow/30">/</span>
+          <span className="hidden sm:inline">{connected ? 'Synchronizace: realtime' : 'Připojení odpojeno'}</span>
+          <span className="text-sasp-glow/30 hidden md:inline">/</span>
+          <span className="hidden md:inline truncate">Pouze pro oprávněný personál — interní použití</span>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function TierBadge({ tier, size = 'md', label = false }) {
+  const meta = TIER_META[tier] || TIER_META['A'];
+  const sizes = {
+    sm: 'h-6 min-w-[2rem] text-[10px] px-1.5',
+    md: 'h-7 min-w-[2.5rem] text-xs px-2',
+    lg: 'h-9 min-w-[3rem] text-sm px-2.5',
+  };
+  return (
+    <div className={`inline-flex items-center justify-center gap-1 rounded-md font-mono font-bold tracking-wider uppercase ${sizes[size]}`}
+         style={{
+           background: `linear-gradient(135deg, ${meta.color}25, ${meta.color}10)`,
+           color: meta.color,
+           border: `1px solid ${meta.color}55`,
+           boxShadow: `0 0 12px ${meta.color}44, inset 0 0 8px ${meta.color}15`,
+         }}>
+      <span className="leading-none">{tier}</span>
+      {label && <span className="text-[8px] opacity-70 leading-none">{meta.label}</span>}
+    </div>
+  );
+}
+
+function TierResponseRow({ tier, cars }) {
+  const meta = TIER_META[tier];
+  return (
+    <div className="tier-row"
+         style={{
+           '--tier-bg-strong': meta.bgStrong,
+           '--tier-bg-soft': meta.bgSoft,
+           borderColor: `${meta.color}40`,
+         }}>
+      <TierBadge tier={tier} size="sm" />
+      <div className="font-mono text-[11px] uppercase tracking-wider text-sasp-ice flex items-center flex-wrap gap-x-2 gap-y-1">
+        {cars.length === 0 ? (
+          <span className="text-sasp-glow/40">—</span>
+        ) : cars.map((car, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <span className="text-sasp-glow/30">·</span>}
+            <span className="text-sasp-ice font-semibold">{car}</span>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VehicleImage({ src, alt, className = '' }) {
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+  // PNG = transparent bg → contain. JPG/Supabase URL = full image → cover
+  const isTransparent = src && /\.png(\?|$)/i.test(src);
+  const fitClass = isTransparent ? 'object-contain' : 'object-cover';
+  return (
+    <div className={`relative ${className}`}>
+      {!loaded && !errored && <div className="absolute inset-0 shimmer rounded-md" />}
+      {errored || !src ? (
+        <div className="absolute inset-0 flex items-center justify-center text-sasp-glow/40 font-mono text-[10px] uppercase tracking-widest">
+          <div className="text-center">
+            <Icons.Car size={40} className="mx-auto mb-1 opacity-50" />
+            <div>Bez obrázku</div>
+          </div>
+        </div>
+      ) : (
+        <img
+          src={src} alt={alt} loading="lazy" decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => { setErrored(true); setLoaded(true); }}
+          className={`${isTransparent ? 'vehicle-img' : 'vehicle-img-photo'} w-full h-full ${fitClass} rounded-md transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
+    </div>
+  );
+}
+
+function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdit, onDelete }) {
+  const tierMeta = TIER_META[v.tier];
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.35, delay: Math.min(index, 12) * 0.02, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={{ y: -4 }}
+      className="group relative text-left clip-corners glass glow-hover rounded-lg overflow-hidden cursor-pointer w-full flex flex-col"
+      style={{ borderColor: 'rgba(96,165,250,0.15)' }}
+      onClick={onSelect}
+    >
+      <div className="absolute top-0 left-0 right-0 h-[2px] z-10"
+           style={{ background: `linear-gradient(90deg, transparent, ${tierMeta.color}, transparent)` }} />
+
+      {/* Top-right actions */}
+      <div className="absolute top-2 right-2 z-10 flex gap-1">
+        {isOfficer && (
+          <>
+            <button onClick={(e) => { e.stopPropagation(); onEdit(v); }}
+                    className="p-1.5 rounded-md glass border border-sasp-glow/15 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40 transition"
+                    title="Upravit">
+              <Icons.Edit size={14} />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(v); }}
+                    className="p-1.5 rounded-md glass border border-sasp-glow/15 text-red-400/70 hover:text-red-400 hover:border-red-400/50 transition"
+                    title="Smazat">
+              <Icons.Trash size={14} />
+            </button>
+          </>
+        )}
+        <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+                className="p-1.5 rounded-md glass border border-sasp-glow/15 text-sasp-glow/50 hover:text-sasp-glow hover:border-sasp-glow/40 transition"
+                title={pinned ? 'Odepnout' : 'Připnout'}>
+          {pinned ? <Icons.PinFill size={14} className="text-sasp-glow" /> : <Icons.Pin size={14} />}
+        </button>
+      </div>
+
+      <div className={`relative h-52 md:h-56 bg-gradient-to-br ${tierMeta.bgFrom} ${tierMeta.bgTo}
+                       border-b border-sasp-glow/10 overflow-hidden flex items-center justify-center p-3`}>
+        {(v.tier === 'S+' || v.tier === 'S') && (
+          <div className="absolute inset-0 stripes-warn opacity-25 pointer-events-none z-[1]" />
+        )}
+        <VehicleImage src={v.image} alt={v.vehicle} className="w-full h-full" />
+        <div className="absolute top-2 left-2 z-[2]">
+          <TierBadge tier={v.tier} size="sm" />
+        </div>
+      </div>
+
+      <div className="p-3 md:p-4 space-y-3 flex-1 flex flex-col">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="font-display font-bold text-lg md:text-xl tracking-wide text-sasp-ice truncate" title={v.vehicle}>
+            {v.vehicle}
+          </h3>
+          <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sasp-glow/40 shrink-0">
+            #{String(index + 1).padStart(3, '0')}
+          </span>
+        </div>
+
+        <div className="space-y-1.5 flex-1">
+          <div className="font-mono text-[9px] uppercase tracking-[0.3em] text-sasp-glow/45">
+            Response podle tieru
+          </div>
+          {(!v.responses || v.responses.length === 0) ? (
+            <div className="text-[10px] font-mono uppercase text-sasp-glow/40 italic">
+              Bez dat
+            </div>
+          ) : (
+            v.responses.map((r) => (
+              <TierResponseRow key={r.tier} tier={r.tier} cars={r.cars || []} />
+            ))
+          )}
+        </div>
+
+        {v.notes && (
+          <p className="text-[11px] text-sasp-ice/55 italic clamp-2 leading-relaxed border-l-2 border-sasp-glow/25 pl-2">
+            {v.notes}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between pt-2 mt-1 border-t border-sasp-glow/10">
+          <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-sasp-glow/50">
+            Detail · spis vozidla
+          </span>
+          <Icons.Crosshair size={12} className="text-sasp-glow/40 group-hover:text-sasp-glow transition" />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function SectionTitle({ icon, text }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <span className="text-sasp-glow">{icon}</span>
+      <h3 className="font-display font-bold text-sm uppercase tracking-[0.3em] text-sasp-glow">{text}</h3>
+      <div className="flex-1 h-px bg-gradient-to-r from-sasp-glow/30 to-transparent" />
+    </div>
+  );
+}
+
+function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDelete }) {
+  const tierMeta = TIER_META[v.tier];
+
+  useEffect(() => {
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  const briefMsg = (() => {
+    if (v.tier === 'S+') return 'Top-tier suspect — koordinuj se vzdušnou podporou a spike strips.';
+    if (v.tier === 'S') return 'Udržuj vizuální kontakt; očekávej rychlé manévry a vysokou rychlost.';
+    if (v.tier === 'A+') return 'Standardní pronásledování se zvýšenou opatrností.';
+    return 'Standardní intercept protokol.';
+  })();
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.92, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg
+                   border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="absolute top-0 left-0 right-0 h-[2px]"
+             style={{ background: `linear-gradient(90deg, transparent, ${tierMeta.color}, ${tierMeta.color}, transparent)` }} />
+
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <Icons.Shield size={18} className="text-sasp-glow" />
+            <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/70">Detail vozidla · TEU</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {isOfficer && (
+              <>
+                <button onClick={() => onEdit(v)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20
+                                   font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+                  <Icons.Edit size={12} />
+                  <span>Upravit</span>
+                </button>
+                <button onClick={() => onDelete(v)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-red-400/30
+                                   font-mono text-[10px] uppercase tracking-widest text-red-400/90 hover:text-red-400 hover:border-red-400/60 transition">
+                  <Icons.Trash size={12} />
+                  <span>Smazat</span>
+                </button>
+              </>
+            )}
+            <button onClick={onTogglePin}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20
+                               font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+              {pinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
+              <span>{pinned ? 'Připnuto' : 'Připnout'}</span>
+            </button>
+            <button onClick={onClose}
+                    className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition"
+                    aria-label="Zavřít">
+              <Icons.Close size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className={`relative bg-gradient-to-br ${tierMeta.bgFrom} ${tierMeta.bgTo} p-6 md:p-8 border-b border-sasp-glow/10`}>
+          <div className="absolute inset-0 stripes-warn opacity-20" />
+          <div className="relative grid md:grid-cols-2 gap-6 items-center">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <TierBadge tier={v.tier} size="lg" label />
+                <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/60">Klasifikace hrozby</span>
+              </div>
+              <h2 className="font-display font-bold text-4xl md:text-5xl tracking-wide headline-emboss leading-tight text-glow">
+                {v.vehicle}
+              </h2>
+              <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">
+                <span>Profil lokátoru</span>
+                <span className="text-sasp-glow/30">·</span>
+                <span>Pursuit-grade</span>
+                <span className="text-sasp-glow/30">·</span>
+                <span className="text-sasp-glow">ID {v.id}</span>
+              </div>
+            </div>
+
+            <div className="relative h-56 md:h-72 flex items-center justify-center p-2">
+              <VehicleImage src={v.image} alt={v.vehicle} className="w-full h-full" />
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 md:p-8 space-y-8">
+          <section>
+            <SectionTitle icon={<Icons.Radio size={14} />} text="Doporučená response" />
+            <p className="text-[11px] font-mono uppercase tracking-widest text-sasp-glow/50 mb-4">
+              Pro daný tier suspect vozidla použij níže uvedené response jednotky.
+            </p>
+            <div className="space-y-2">
+              {(v.responses || []).map((r, i) => (
+                <motion.div key={r.tier}
+                            initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.05 * i }}>
+                  <TierResponseRow tier={r.tier} cars={r.cars || []} />
+                </motion.div>
+              ))}
+            </div>
+          </section>
+
+          {v.notes && (
+            <section>
+              <SectionTitle icon={<Icons.AlertTriangle size={14} />} text="Poznámky z terénu" />
+              <div className="rounded-md glass p-4 border-l-4 border-l-sasp-glow border border-sasp-glow/15">
+                <p className="text-sasp-ice/90 leading-relaxed italic">{v.notes}</p>
+              </div>
+            </section>
+          )}
+
+          <section>
+            <SectionTitle icon={<Icons.Activity size={14} />} text="Taktický brief" />
+            <div className="rounded-md glass p-4 border border-sasp-glow/15">
+              <p className="text-sm text-sasp-ice/80 leading-relaxed">
+                Suspect vozidlo je klasifikováno jako <strong className="text-sasp-glow">{v.tier}-tier</strong>.
+                Při engagement použij doporučené response jednotky podle varianty lokátoru viz výše.
+                {' '}{briefMsg}
+              </p>
+            </div>
+          </section>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ============================================================
+// LOGIN MODAL
+// ============================================================
+function LoginModal({ open, onClose }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [mode, setMode] = useState('login'); // 'login' or 'signup'
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      if (mode === 'signup') {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        setError('Účet vytvořen! Zkontroluj e-mail pro potvrzení (pokud je email confirmation zapnutý).');
+        setMode('login');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        onClose();
+      }
+    } catch (err) {
+      setError(err.message || 'Něco se pokazilo');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md clip-corners glass-strong rounded-lg p-6 border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <Icons.Lock size={18} className="text-sasp-glow" />
+            <h2 className="font-display font-bold text-xl tracking-wider text-sasp-ice">Officer Login</h2>
+          </div>
+          <button onClick={onClose} className="p-1 text-sasp-glow/60 hover:text-sasp-glow transition" aria-label="Zavřít">
+            <Icons.Close size={18} />
+          </button>
+        </div>
+
+        <p className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-6 leading-relaxed">
+          {mode === 'login'
+            ? 'Přihlas se pro editaci databáze.'
+            : 'Vytvořit nový účet. Pro přístup k editaci musí admin přidat tvůj email do tabulky officers.'}
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">E-mail</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+          </div>
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Heslo</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
+              {error}
+            </div>
+          )}
+
+          <button type="submit" disabled={loading}
+                  className="w-full px-4 py-2.5 rounded-md font-mono text-xs uppercase tracking-widest transition
+                             bg-sasp-glow text-sasp-black hover:bg-sasp-ice disabled:opacity-50 flex items-center justify-center gap-2">
+            {loading ? <Icons.Loader size={14} /> : (mode === 'login' ? <Icons.Lock size={14} /> : <Icons.Plus size={14} />)}
+            <span>{loading ? 'Pracuji...' : (mode === 'login' ? 'Přihlásit se' : 'Vytvořit účet')}</span>
+          </button>
+
+          <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
+                  className="w-full text-center font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 hover:text-sasp-glow transition">
+            {mode === 'login' ? 'Vytvořit nový účet →' : '← Přihlásit se k existujícímu účtu'}
+          </button>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ============================================================
+// VEHICLE EDITOR MODAL (Add + Edit)
+// ============================================================
+function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
+  // vehicle === null → add mode
+  // vehicle === object → edit mode
+  const isEdit = !!vehicle;
+
+  const [form, setForm] = useState(() => ({
+    id: vehicle?.id || '',
+    vehicle: vehicle?.vehicle || '',
+    tier: vehicle?.tier || 'A',
+    notes: vehicle?.notes || '',
+    image: vehicle?.image || '',
+    responses: vehicle?.responses ? JSON.parse(JSON.stringify(vehicle.responses)) : [
+      { tier: 'A', cars: [] }
+    ],
+  }));
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    return () => document.body.classList.remove('modal-open');
+  }, [open]);
+
+  if (!open) return null;
+
+  // Auto-generate ID from name if in add mode
+  function updateName(name) {
+    setForm(f => ({
+      ...f,
+      vehicle: name,
+      id: isEdit ? f.id : (slugify(name) + '-' + f.tier.toLowerCase().replace('+', 'plus')),
+    }));
+  }
+
+  function updateTier(tier) {
+    setForm(f => ({
+      ...f,
+      tier,
+      id: isEdit ? f.id : (slugify(f.vehicle) + '-' + tier.toLowerCase().replace('+', 'plus')),
+    }));
+  }
+
+  function addResponseRow() {
+    setForm(f => {
+      const usedTiers = new Set(f.responses.map(r => r.tier));
+      const available = ['S+', 'S', 'A+', 'A'].find(t => !usedTiers.has(t));
+      if (!available) return f;
+      return { ...f, responses: [...f.responses, { tier: available, cars: [] }] };
+    });
+  }
+
+  function removeResponseRow(idx) {
+    setForm(f => ({ ...f, responses: f.responses.filter((_, i) => i !== idx) }));
+  }
+
+  function updateResponseTier(idx, tier) {
+    setForm(f => ({
+      ...f,
+      responses: f.responses.map((r, i) => i === idx ? { ...r, tier } : r),
+    }));
+  }
+
+  function toggleResponseCar(idx, car) {
+    setForm(f => ({
+      ...f,
+      responses: f.responses.map((r, i) => {
+        if (i !== idx) return r;
+        const has = r.cars.includes(car);
+        return { ...r, cars: has ? r.cars.filter(c => c !== car) : [...r.cars, car] };
+      }),
+    }));
+  }
+
+  function onImagePick(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Obrázek je větší než 5 MB');
+      return;
+    }
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setImagePreview(ev.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSave() {
+    setError('');
+    if (!form.vehicle.trim()) { setError('Název vozidla je povinný'); return; }
+    if (!form.id.trim()) { setError('ID je povinné'); return; }
+    if (form.responses.length === 0) { setError('Přidej alespoň jednu response variantu'); return; }
+
+    try {
+      await onSave({ ...form }, imageFile);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Chyba při ukládání');
+    }
+  }
+
+  // Currently shown image (preview > existing)
+  const previewSrc = imagePreview || form.image || null;
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
+          <div className="flex items-center gap-3">
+            {isEdit ? <Icons.Edit size={18} className="text-sasp-glow" /> : <Icons.Plus size={18} className="text-emerald-400" />}
+            <h2 className="font-display font-bold text-lg tracking-wider text-sasp-ice">
+              {isEdit ? `Upravit · ${vehicle.vehicle}` : 'Nové vozidlo'}
+            </h2>
+          </div>
+          <button onClick={onClose} disabled={isUploading}
+                  className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition disabled:opacity-50">
+            <Icons.Close size={16} />
+          </button>
+        </div>
+
+        <div className="p-6 md:p-8 space-y-6">
+          {/* Top section: image + basic info side by side */}
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Image picker */}
+            <div className="space-y-3">
+              <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">Obrázek vozidla</label>
+              <div className="relative h-48 rounded-lg glass border border-sasp-glow/15 flex items-center justify-center overflow-hidden">
+                {previewSrc ? (
+                  <VehicleImage src={previewSrc} alt={form.vehicle} className="w-full h-full" />
+                ) : (
+                  <div className="text-center text-sasp-glow/40">
+                    <Icons.Car size={40} className="mx-auto mb-2 opacity-50" />
+                    <div className="font-mono text-[10px] uppercase tracking-widest">Žádný obrázek</div>
+                  </div>
+                )}
+              </div>
+              <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={onImagePick} className="hidden" />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition disabled:opacity-50">
+                  <Icons.Upload size={12} />
+                  <span>Nahrát soubor</span>
+                </button>
+                {(form.image || imagePreview) && (
+                  <button type="button" onClick={() => { setImageFile(null); setImagePreview(null); setForm(f => ({...f, image: ''})); }} disabled={isUploading}
+                          className="px-3 py-2 rounded-md glass border border-red-400/30 text-red-400/90 hover:text-red-400 hover:border-red-400/60 transition disabled:opacity-50"
+                          title="Odebrat obrázek">
+                    <Icons.Trash size={12} />
+                  </button>
+                )}
+              </div>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40">
+                PNG / JPG / WebP · max 5 MB
+              </p>
+            </div>
+
+            {/* Basic info */}
+            <div className="space-y-4">
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Název vozidla *</label>
+                <input type="text" value={form.vehicle} onChange={(e) => updateName(e.target.value)} placeholder="např. Itali GTO" />
+              </div>
+
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Tier suspect vozidla *</label>
+                <div className="flex gap-1">
+                  {['S+', 'S', 'A+', 'A'].map(t => (
+                    <button key={t} type="button" onClick={() => updateTier(t)}
+                            className="flex-1 px-2 py-2 rounded-md font-mono text-xs font-bold uppercase tracking-wider transition border"
+                            style={{
+                              background: form.tier === t ? `linear-gradient(135deg, ${TIER_META[t].color}, ${TIER_META[t].color}dd)` : 'rgba(13,20,36,0.5)',
+                              color: form.tier === t ? '#000' : TIER_META[t].color,
+                              borderColor: form.tier === t ? 'transparent' : `${TIER_META[t].color}40`,
+                              boxShadow: form.tier === t ? `0 0 16px ${TIER_META[t].color}66` : 'none',
+                            }}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">ID (slug)</label>
+                <input type="text" value={form.id} onChange={(e) => setForm(f => ({...f, id: e.target.value}))} placeholder="auto-generováno" disabled={isEdit} />
+                <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 mt-1">
+                  {isEdit ? 'ID nelze měnit po vytvoření' : 'Generuje se automaticky z názvu'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Responses editor */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">Response podle tieru lokátoru</label>
+              {form.responses.length < 4 && (
+                <button type="button" onClick={addResponseRow}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+                  <Icons.Plus size={10} />
+                  <span>Přidat řádek</span>
+                </button>
+              )}
+            </div>
+
+            {form.responses.map((r, idx) => (
+              <div key={idx} className="rounded-md glass p-3 border border-sasp-glow/15 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    {['S+', 'S', 'A+', 'A'].map(t => (
+                      <button key={t} type="button" onClick={() => updateResponseTier(idx, t)}
+                              className="px-2 py-1 rounded font-mono text-[10px] font-bold uppercase tracking-wider transition border"
+                              style={{
+                                background: r.tier === t ? `${TIER_META[t].color}30` : 'transparent',
+                                color: r.tier === t ? TIER_META[t].color : '#94a3b8',
+                                borderColor: r.tier === t ? `${TIER_META[t].color}60` : 'rgba(96,165,250,0.15)',
+                              }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-1" />
+                  <button type="button" onClick={() => removeResponseRow(idx)}
+                          className="p-1.5 rounded-md text-red-400/70 hover:text-red-400 transition"
+                          title="Smazat řádek">
+                    <Icons.Trash size={12} />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_RESPONSE_CARS.map(car => {
+                    const active = r.cars.includes(car);
+                    return (
+                      <button key={car} type="button" onClick={() => toggleResponseCar(idx, car)}
+                              className={`px-2.5 py-1 rounded font-mono text-[10px] uppercase tracking-wider transition border
+                                          ${active
+                                            ? 'bg-sasp-glow text-sasp-black border-transparent shadow-[0_0_12px_rgba(96,165,250,0.4)]'
+                                            : 'glass text-sasp-glow/70 border-sasp-glow/20 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
+                        {active && '✓ '}{car}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Poznámky z terénu (volitelné)</label>
+            <textarea value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))}
+                      rows={3} placeholder="např. Bez problemu stiha dominator" />
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
+              {error}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-2 border-t border-sasp-glow/10">
+            <button type="button" onClick={onClose} disabled={isUploading}
+                    className="px-4 py-2 rounded-md glass border border-sasp-glow/20 font-mono text-[11px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition disabled:opacity-50">
+              Zrušit
+            </button>
+            <button type="button" onClick={handleSave} disabled={isUploading}
+                    className="px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-50 flex items-center gap-2">
+              {isUploading ? <Icons.Loader size={12} /> : <Icons.Check size={12} />}
+              <span>{isUploading ? 'Ukládám...' : (isEdit ? 'Uložit změny' : 'Vytvořit')}</span>
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ============================================================
+// CONFIRM DIALOG
+// ============================================================
+function ConfirmDialog({ open, title, message, confirmText = 'Potvrdit', danger, onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <motion.div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onCancel}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md clip-corners glass-strong rounded-lg p-6 border-sasp-glow/30"
+      >
+        <h3 className="font-display font-bold text-lg tracking-wider text-sasp-ice mb-3">{title}</h3>
+        <p className="text-sasp-ice/80 mb-6 leading-relaxed">{message}</p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel}
+                  className="px-4 py-2 rounded-md glass border border-sasp-glow/20 font-mono text-[11px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+            Zrušit
+          </button>
+          <button onClick={onConfirm}
+                  className={`px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition border
+                              ${danger
+                                ? 'bg-red-500/20 border-red-400/40 text-red-300 hover:bg-red-500/30 hover:border-red-400/70'
+                                : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70'}`}>
+            {confirmText}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ============================================================
+// SETUP HINT (shown if Supabase not configured)
+// ============================================================
+function SetupHint() {
+  return (
+    <div className="fixed inset-0 z-[100] bg-sasp-black/95 backdrop-blur flex items-center justify-center p-6 overflow-y-auto">
+      <div className="max-w-2xl w-full clip-corners glass-strong rounded-lg p-8 border-yellow-400/30">
+        <div className="flex items-center gap-3 mb-4">
+          <Icons.AlertTriangle size={24} className="text-yellow-400" />
+          <h2 className="font-display font-bold text-2xl tracking-wider text-sasp-ice">Setup nedokončen</h2>
+        </div>
+        <p className="text-sasp-ice/80 mb-4 leading-relaxed">
+          Supabase URL a anon key nejsou nastavené. Otevři <code className="px-1 bg-sasp-glow/10 rounded text-sasp-glow font-mono">config.js</code> a vlož své údaje z Supabase projektu.
+        </p>
+        <p className="text-sasp-ice/60 text-sm mb-6 leading-relaxed">
+          Podrobný návod najdeš v souboru <code className="px-1 bg-sasp-glow/10 rounded text-sasp-glow font-mono">SETUP.md</code>.
+        </p>
+        <div className="rounded-md bg-sasp-carbon/80 border border-sasp-glow/15 p-4 font-mono text-xs text-sasp-glow/80">
+          <div className="text-sasp-glow/50 mb-2">// config.js</div>
+          <div>window.SUPABASE_CONFIG = {`{`}</div>
+          <div className="pl-4">SUPABASE_URL: <span className="text-yellow-300">'https://abc.supabase.co'</span>,</div>
+          <div className="pl-4">SUPABASE_ANON_KEY: <span className="text-yellow-300">'eyJ...'</span>,</div>
+          <div>{`};`}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App() {
+  const auth = useAuth();
+  const isOfficer = !!auth.officer;
+
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [connected, setConnected] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  const [query, setQuery] = useState('');
+  const [filters, setFilters] = useState({ tier: null, response: null });
+  const [sortBy, setSortBy] = useState('tier');
+  const [selected, setSelected] = useState(null);
+  const [pinned, setPinned] = useState(() => loadSet(STORAGE_KEY_PINNED));
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorVehicle, setEditorVehicle] = useState(null);  // null = add, obj = edit
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  function showToast(message, type = 'info') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  // ----- LOAD VEHICLES from Supabase -----
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const { data, error } = await supabase.from('vehicles').select('*').order('vehicle');
+      if (cancelled) return;
+      if (error) {
+        console.error('Failed to load vehicles:', error);
+        showToast('Nepodařilo se načíst data: ' + error.message, 'error');
+        setConnected(false);
+      } else {
+        setVehicles(data || []);
+        setConnected(true);
+      }
+      setLoading(false);
+    }
+    load();
+
+    // ----- REALTIME subscription -----
+    const channel = supabase
+      .channel('vehicles-realtime')
+      .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'vehicles' },
+          (payload) => {
+            if (cancelled) return;
+            if (payload.eventType === 'INSERT') {
+              setVehicles(prev => {
+                if (prev.some(v => v.id === payload.new.id)) return prev;
+                return [...prev, payload.new];
+              });
+              showToast(`Přidáno: ${payload.new.vehicle}`, 'success');
+            } else if (payload.eventType === 'UPDATE') {
+              setVehicles(prev => prev.map(v => v.id === payload.new.id ? payload.new : v));
+              showToast(`Aktualizováno: ${payload.new.vehicle}`, 'info');
+            } else if (payload.eventType === 'DELETE') {
+              setVehicles(prev => prev.filter(v => v.id !== payload.old.id));
+              showToast(`Smazáno`, 'info');
+            }
+          })
+      .subscribe();
+
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, []);
+
+  // ⌘K shortcut
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCmdOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  const togglePin = useCallback((id) => {
+    setPinned(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      saveSet(STORAGE_KEY_PINNED, next);
+      return next;
+    });
+  }, []);
+
+  // ----- ADD / EDIT vehicle -----
+  async function saveVehicle(form, imageFile) {
+    setSyncing(true);
+    try {
+      let imageUrl = form.image;
+
+      // Upload new image if provided
+      if (imageFile) {
+        const ext = imageFile.name.split('.').pop().toLowerCase();
+        const path = `${form.id}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from(CFG.STORAGE_BUCKET || 'vehicles')
+          .upload(path, imageFile, { cacheControl: '3600', upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage
+          .from(CFG.STORAGE_BUCKET || 'vehicles')
+          .getPublicUrl(path);
+        imageUrl = urlData.publicUrl;
+      }
+
+      const payload = {
+        id: form.id,
+        vehicle: form.vehicle,
+        tier: form.tier,
+        responses: form.responses,
+        notes: form.notes || '',
+        image: imageUrl || null,
+        updated_by: auth.session?.user?.email || null,
+      };
+
+      const isEdit = vehicles.some(v => v.id === form.id);
+      if (isEdit) {
+        const { error } = await supabase.from('vehicles').update(payload).eq('id', form.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('vehicles').insert(payload);
+        if (error) throw error;
+      }
+      showToast(isEdit ? 'Uloženo' : 'Vytvořeno', 'success');
+    } catch (e) {
+      showToast('Chyba: ' + e.message, 'error');
+      throw e;  // re-throw so editor shows the error
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  // ----- DELETE vehicle -----
+  async function deleteVehicle(v) {
+    setSyncing(true);
+    try {
+      const { error } = await supabase.from('vehicles').delete().eq('id', v.id);
+      if (error) throw error;
+      showToast(`Smazáno: ${v.vehicle}`, 'success');
+      setSelected(null);
+    } catch (e) {
+      showToast('Chyba: ' + e.message, 'error');
+    } finally {
+      setSyncing(false);
+      setConfirmDelete(null);
+    }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    showToast('Odhlášeno', 'info');
+  }
+
+  // ----- SEARCH / FILTER / SORT -----
+  const fuse = useMemo(() => new Fuse(vehicles, {
+    keys: ['vehicle', 'notes', { name: 'responses.cars', weight: 0.5 }],
+    threshold: 0.4, ignoreLocation: true,
+  }), [vehicles]);
+
+  function highestResponseTier(v) {
+    if (!v.responses?.length) return v.tier;
+    const tiers = v.responses.map(r => r.tier);
+    if (tiers.includes('S+')) return 'S+';
+    if (tiers.includes('S')) return 'S';
+    if (tiers.includes('A+')) return 'A+';
+    return 'A';
+  }
+
+  const filtered = useMemo(() => {
+    let list = vehicles;
+    if (showPinnedOnly) list = list.filter(v => pinned.has(v.id));
+    if (filters.tier) {
+      list = list.filter(v => v.tier === filters.tier || (v.responses || []).some(r => r.tier === filters.tier));
+    }
+    if (filters.response) {
+      list = list.filter(v => (v.responses || []).some(r => (r.cars || []).includes(filters.response)));
+    }
+    if (query.trim()) {
+      const results = fuse.search(query.trim());
+      const ids = new Set(results.map(r => r.item.id));
+      list = list.filter(v => ids.has(v.id));
+    }
+    list = [...list];
+    if (sortBy === 'tier') {
+      list.sort((a, b) => {
+        const pa = pinned.has(a.id) ? 0 : 1;
+        const pb = pinned.has(b.id) ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        const ta = TIER_ORDER[highestResponseTier(a)] ?? 99;
+        const tb = TIER_ORDER[highestResponseTier(b)] ?? 99;
+        if (ta !== tb) return ta - tb;
+        return a.vehicle.localeCompare(b.vehicle, 'cs');
+      });
+    } else {
+      list.sort((a, b) => {
+        const pa = pinned.has(a.id) ? 0 : 1;
+        const pb = pinned.has(b.id) ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        return a.vehicle.localeCompare(b.vehicle, 'cs');
+      });
+    }
+    return list;
+  }, [query, filters, sortBy, pinned, showPinnedOnly, fuse, vehicles]);
+
+  // Render setup hint if not configured
+  if (!SUPABASE_CONFIGURED) return <SetupHint />;
+
+  return (
+    <div className="relative min-h-screen">
+      <Header
+        onCommand={() => setCmdOpen(true)}
+        auth={auth}
+        onLogin={() => setLoginOpen(true)}
+        onLogout={handleLogout}
+        onAddVehicle={() => { setEditorVehicle(null); setEditorOpen(true); }}
+        connected={connected}
+        syncing={syncing}
+      />
+
+      <main className="relative z-10 max-w-[1600px] mx-auto px-4 md:px-8 py-8 md:py-12">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="mb-8 md:mb-12 max-w-3xl"
+        >
+          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.4em] text-sasp-glow/60 mb-3">
+            <span className="block w-8 h-px bg-sasp-glow/40" />
+            <span>Interní · TEU-DB · ÚROVEŇ 3</span>
+          </div>
+          <h1 className="font-display font-bold text-4xl md:text-6xl tracking-wide headline-emboss leading-[1.05] text-glow mb-3">
+            Databáze response<br/>jednotek
+          </h1>
+          <p className="text-sasp-ice/60 text-base md:text-lg leading-relaxed max-w-2xl">
+            Tier list suspect vozidel a doporučených pursuit jednotek. Cloud sync přes Supabase —
+            změny se okamžitě promítnou všem připojeným důstojníkům.
+          </p>
+        </motion.div>
+
+        {/* Search */}
+        <div className="relative group mb-6">
+          <div className="absolute inset-y-0 left-0 flex items-center pl-4 text-sasp-glow/60 group-focus-within:text-sasp-glow transition">
+            <Icons.Search size={18} />
+          </div>
+          <input
+            type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Hledej vozidlo, response jednotku nebo poznámku..."
+            className="!w-full !pl-12 !pr-28 !py-3 md:!py-3.5 !rounded-md !text-sm"
+            autoComplete="off"
+          />
+          {query && (
+            <button onClick={() => setQuery('')}
+                    className="absolute inset-y-0 right-3 my-auto h-7 w-7 rounded-md flex items-center justify-center text-sasp-glow/60 hover:text-sasp-glow hover:bg-sasp-glow/10 transition"
+                    aria-label="Smazat">
+              <Icons.X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Filters & stats */}
+        <div className="space-y-4 mb-6">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.25em]">
+              <span className="text-sasp-glow/60">
+                <span className="text-sasp-glow text-sm font-bold">{filtered.length}</span>
+                <span className="mx-1.5">/</span>
+                <span>{vehicles.length} záznamů</span>
+              </span>
+              {pinned.size > 0 && (
+                <>
+                  <span className="text-sasp-glow/30">·</span>
+                  <button onClick={() => setShowPinnedOnly(!showPinnedOnly)}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded-md border transition
+                                      ${showPinnedOnly ? 'border-sasp-glow text-sasp-glow bg-sasp-glow/10'
+                                                       : 'border-sasp-glow/20 text-sasp-glow/70 hover:border-sasp-glow/50'}`}>
+                    <Icons.PinFill size={10} />
+                    <span>{pinned.size} připnuto</span>
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">
+              <Icons.Sort size={12} />
+              <span>Řadit:</span>
+              {['tier', 'name'].map(s => (
+                <button key={s} onClick={() => setSortBy(s)}
+                        className={`px-2 py-1 rounded transition ${sortBy === s ? 'text-sasp-glow bg-sasp-glow/10' : 'text-sasp-glow/50 hover:text-sasp-glow'}`}>
+                  {s === 'tier' ? 'tier' : 'název'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4 p-4 glass clip-corners rounded-md">
+            <div className="flex flex-col gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/50">Tier</span>
+              <div className="flex flex-wrap gap-1.5">
+                <FilterChip active={filters.tier === null} onClick={() => setFilters(f => ({...f, tier: null}))}>Vše</FilterChip>
+                {Object.keys(TIER_META).map(t => (
+                  <FilterChip key={t} active={filters.tier === t} onClick={() => setFilters(f => ({...f, tier: t}))} color={TIER_META[t].color}>
+                    {t}
+                  </FilterChip>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/50">Response jednotka</span>
+              <div className="flex flex-wrap gap-1.5">
+                <FilterChip active={filters.response === null} onClick={() => setFilters(f => ({...f, response: null}))}>Vše</FilterChip>
+                {ALL_RESPONSE_CARS.map(c => (
+                  <FilterChip key={c} active={filters.response === c} onClick={() => setFilters(f => ({...f, response: c}))}>{c}</FilterChip>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="py-20 text-center">
+            <Icons.Loader size={32} className="mx-auto text-sasp-glow/60 mb-4" />
+            <p className="font-mono text-xs uppercase tracking-widest text-sasp-glow/50">Načítám databázi...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-20 text-center">
+            <Icons.Crosshair size={48} className="mx-auto text-sasp-glow/30 mb-4" />
+            <h3 className="font-display text-xl text-sasp-ice/70 mb-2">Žádné výsledky</h3>
+            <p className="font-mono text-xs uppercase tracking-widest text-sasp-glow/50">
+              {vehicles.length === 0 ? 'Databáze je prázdná. Naseed ji nebo přidej první vozidlo.' : 'Zkus jiná klíčová slova nebo zruš filtry.'}
+            </p>
+            {(query || filters.tier || filters.response || showPinnedOnly) && (
+              <button onClick={() => { setQuery(''); setFilters({ tier: null, response: null }); setShowPinnedOnly(false); }}
+                      className="mt-4 px-4 py-2 rounded-md glass border border-sasp-glow/30 font-mono text-[11px] uppercase tracking-widest text-sasp-glow hover:border-sasp-glow/60 transition">
+                Resetovat
+              </button>
+            )}
+          </div>
+        ) : (
+          <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
+            <AnimatePresence mode="popLayout">
+              {filtered.map((v, i) => (
+                <VehicleCard
+                  key={v.id} v={v} index={i}
+                  pinned={pinned.has(v.id)} onTogglePin={() => togglePin(v.id)}
+                  onSelect={() => setSelected(v)}
+                  isOfficer={isOfficer}
+                  onEdit={(veh) => { setEditorVehicle(veh); setEditorOpen(true); }}
+                  onDelete={(veh) => setConfirmDelete(veh)}
+                />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+        <footer className="mt-20 pt-8 border-t border-sasp-glow/10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/40">
+            <span>SASP TEU · v2.0 Supabase · {connected ? 'Online' : 'Offline'}</span>
+            <span className="flex items-center gap-3">
+              <span>⌘K Hledání</span>
+              <span className="text-sasp-glow/20">·</span>
+              <span>ESC Zavřít</span>
+            </span>
+          </div>
+        </footer>
+      </main>
+
+      <AnimatePresence>
+        {selected && (
+          <VehicleModal v={selected} onClose={() => setSelected(null)}
+                        pinned={pinned.has(selected.id)} onTogglePin={() => togglePin(selected.id)}
+                        isOfficer={isOfficer}
+                        onEdit={(v) => { setSelected(null); setEditorVehicle(v); setEditorOpen(true); }}
+                        onDelete={(v) => { setSelected(null); setConfirmDelete(v); }} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {loginOpen && <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editorOpen && (
+          <VehicleEditor
+            open={editorOpen}
+            vehicle={editorVehicle}
+            isUploading={syncing}
+            onClose={() => { setEditorOpen(false); setEditorVehicle(null); }}
+            onSave={saveVehicle}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <ConfirmDialog
+            open={!!confirmDelete}
+            title="Smazat vozidlo?"
+            message={`Opravdu chceš smazat "${confirmDelete.vehicle}"? Tato akce je nevratná.`}
+            confirmText="Smazat"
+            danger
+            onCancel={() => setConfirmDelete(null)}
+            onConfirm={() => deleteVehicle(confirmDelete)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Toast notifications */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-5 py-3 rounded-md glass-strong border shadow-2xl font-mono text-sm uppercase tracking-widest"
+            style={{
+              borderColor: toast.type === 'error' ? 'rgba(239,68,68,0.5)' : toast.type === 'success' ? 'rgba(34,197,94,0.5)' : 'rgba(96,165,250,0.5)',
+              color: toast.type === 'error' ? '#fca5a5' : toast.type === 'success' ? '#86efac' : '#cbe4ff',
+            }}
+          >
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function FilterChip({ children, active, onClick, color }) {
+  return (
+    <button onClick={onClick}
+            className={`px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border
+                        ${active ? 'text-sasp-black border-transparent shadow-[0_0_16px_rgba(96,165,250,0.4)]'
+                                 : 'text-sasp-glow/70 hover:text-sasp-glow border-sasp-glow/15 hover:border-sasp-glow/40 glass'}`}
+            style={active ? {
+              background: color ? `linear-gradient(135deg, ${color}, ${color}dd)` : 'linear-gradient(135deg, #60a5fa, #3b82f6)',
+              color: color ? '#000' : '#04060c',
+            } : {}}>
+      {children}
+    </button>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+
+</body>
+</html>
