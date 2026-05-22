@@ -1164,7 +1164,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     const { data, error } = await supabase
       .from('officers')
       .select('*')
-      .order('granted_at', { ascending: false });
+      .order('created_at', { ascending: false });
     if (error) setError(error.message);
     else setOfficers(data || []);
     setLoading(false);
