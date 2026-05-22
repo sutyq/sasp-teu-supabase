@@ -20,6 +20,16 @@
 <script crossorigin src="https://unpkg.com/@babel/standalone@7.25.0/babel.min.js"></script>
 
 <script>
+  // Načti Supabase jako ESM module a vystav ho na window pod jiným jménem,
+  // aby nedošlo ke kolizi s Babel standalone identifikátorem 'supabase'.
+  window.__supabaseReady = (async () => {
+    const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    window.supabaseLib = mod;
+    return mod;
+  })();
+</script>
+  
+<script>
 tailwind.config = {
   theme: {
     extend: {
