@@ -1422,6 +1422,45 @@ function App() {
   // Render setup hint if not configured
   if (!SUPABASE_CONFIGURED) return <SetupHint />;
 
+  // Render login gate if not logged in
+  if (!auth.loading && !auth.session) {
+    return (
+      <div className="relative min-h-screen flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full clip-corners glass-strong rounded-lg p-8 border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)] text-center"
+        >
+          <svg viewBox="0 0 100 100" className="w-20 h-20 mx-auto text-sasp-glow drop-shadow-[0_0_12px_rgba(96,165,250,0.6)]" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M50 10 L85 24 V54 C85 73 70 88 50 94 C30 88 15 73 15 54 V24 Z" strokeLinejoin="round" />
+            <path d="M50 18 L78 30 V54 C78 69 65 81 50 86 C35 81 22 69 22 54 V30 Z" opacity="0.35" />
+            <text x="50" y="58" fontFamily="JetBrains Mono" fontSize="22" fontWeight="800" textAnchor="middle" fill="currentColor" stroke="none">TEU</text>
+          </svg>
+          <h1 className="font-display font-bold text-3xl tracking-wider headline-emboss text-glow mt-6 mb-2">
+            SASP TEU
+          </h1>
+          <div className="font-mono text-[10px] uppercase tracking-[0.35em] text-sasp-glow/70 mb-6">
+            Restricted Access
+          </div>
+          <p className="text-sasp-ice/70 mb-6 leading-relaxed text-sm">
+            Databáze lokátorů obsahuje citlivé taktické informace.
+            Přístup omezen pouze pro autorizovaný personál SASP.
+          </p>
+          <button onClick={() => setLoginOpen(true)}
+                  className="w-full px-4 py-3 rounded-md bg-sasp-glow text-sasp-black hover:bg-sasp-ice transition font-mono text-xs uppercase tracking-widest flex items-center justify-center gap-2">
+            <Icons.Lock size={14} />
+            <span>Přihlásit se</span>
+          </button>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 mt-6">
+            Unauthorized access is prohibited
+          </p>
+        </motion.div>
+        <AnimatePresence>
+          {loginOpen && <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen">
       <Header
