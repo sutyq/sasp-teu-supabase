@@ -16,18 +16,15 @@
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/framer-motion@11.3.19/dist/framer-motion.js"></script>
 <script crossorigin src="https://unpkg.com/fuse.js@7.0.0/dist/fuse.min.js"></script>
-<script crossorigin src="https://unpkg.com/@supabase/supabase-js@2"></script>
-<script crossorigin src="https://unpkg.com/@babel/standalone@7.25.0/babel.min.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // Načti Supabase jako ESM module a vystav ho na window pod jiným jménem,
-  // aby nedošlo ke kolizi s Babel standalone identifikátorem 'supabase'.
-  window.__supabaseReady = (async () => {
-    const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-    window.supabaseLib = mod;
-    return mod;
-  })();
+  // Move Supabase to a non-colliding global. Babel/standalone JSX transform
+  // sometimes treats 'supabase' as a JSX component and breaks the reference.
+  if (window.supabase && window.supabase.createClient) {
+    window.SupabaseSDK = window.supabase;
+  }
 </script>
+<script crossorigin src="https://unpkg.com/@babel/standalone@7.25.0/babel.min.js"></script>
   
 <script>
 tailwind.config = {
@@ -200,7 +197,7 @@ const { motion, AnimatePresence } = window.Motion || window.framerMotion || {};
 const CFG = window.SUPABASE_CONFIG || {};
 const SUPABASE_CONFIGURED = CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes('YOUR-PROJECT');
 const supabase = SUPABASE_CONFIGURED
-  ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY)
+  ? (window.SupabaseSDK || window.supabase).createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY)
   : null;
 
 // ============================================================
