@@ -418,7 +418,7 @@ function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, onAdminPanel
         <button onClick={onCommand}
                 className="hidden md:flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15">
           <Icons.Cmd size={12} />
-          <span>⌘K</span>
+          <span>Ctrl+K</span>
         </button>
       </div>
 
@@ -1037,7 +1037,7 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Tier suspect vozidla *</label>
                 <div className="flex gap-1">
-                  {['S+', 'S', 'A+', 'A'].map(t => (
+                  {['S', 'A'].map(t => (
                     <button key={t} type="button" onClick={() => updateTier(t)}
                             className="flex-1 px-2 py-2 rounded-md font-mono text-xs font-bold uppercase tracking-wider transition border"
                             style={{
@@ -1899,7 +1899,7 @@ function App() {
 
   // ----- SEARCH / FILTER / SORT -----
   const fuse = useMemo(() => new Fuse(vehicles, {
-    keys: ['vehicle', 'notes', { name: 'responses.cars', weight: 0.5 }],
+    keys: ['vehicle'],
     threshold: 0.4, ignoreLocation: true,
   }), [vehicles]);
 
@@ -2029,7 +2029,7 @@ function App() {
           </div>
           <input
             type="text" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Hledej vozidlo, response jednotku nebo poznámku..."
+            placeholder="Hledej vozidlo..."
             className="!w-full !pl-12 !pr-28 !py-3 md:!py-3.5 !rounded-md !text-sm"
             autoComplete="off"
           />
@@ -2140,7 +2140,7 @@ function App() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/40">
             <span>SASP TEU · v2.0 Supabase · {connected ? 'Online' : 'Offline'}</span>
             <span className="flex items-center gap-3">
-              <span>⌘K Hledání</span>
+              <span>Ctrl+K Hledání</span>
               <span className="text-sasp-glow/20">·</span>
               <span>ESC Zavřít</span>
             </span>
