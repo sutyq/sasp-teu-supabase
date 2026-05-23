@@ -905,8 +905,6 @@ function LoginModal({ open, onClose }) {
 // VEHICLE EDITOR MODAL (Add + Edit)
 // ============================================================
 function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
-  // vehicle === null → add mode
-  // vehicle === object → edit mode
   const isEdit = !!vehicle;
 
   const [form, setForm] = useState(() => ({
@@ -933,7 +931,6 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
 
   if (!open) return null;
 
-  // Auto-generate ID from name if in add mode
   function updateName(name) {
     setForm(f => ({
       ...f,
@@ -998,16 +995,12 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
     setError('');
     if (!form.vehicle.trim()) { setError('Název vozidla je povinný'); return; }
     if (!form.id.trim()) { setError('ID je povinné'); return; }
-    // Tier+responses jsou povinné JEN pro locator vehicles
-    if (!form.non_locator) {
-      if (form.responses.length === 0) { setError('Přidej alespoň jednu response variantu'); return; }
+    if (!form.non_locator && form.responses.length === 0) {
+      setError('Přidej alespoň jednu response variantu');
+      return;
     }
-
     try {
-      // Pokud je non-locator, vynuluj responses + tier nech default (UI je schované)
-      const payload = form.non_locator
-        ? { ...form, responses: [] }
-        : { ...form };
+      const payload = form.non_locator ? { ...form, responses: [] } : { ...form };
       await onSave(payload, imageFile);
       onClose();
     } catch (err) {
@@ -1015,7 +1008,6 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
     }
   }
 
-  // Currently shown image (preview > existing)
   const previewSrc = imagePreview || form.image || null;
 
   return (
@@ -1041,7 +1033,6 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
         </div>
 
         <div className="p-6 md:p-8 space-y-6">
-          <div className="p-6 md:p-8 space-y-6">
           {/* Non-locator toggle */}
           <label className={`flex items-center gap-3 p-3 rounded-md glass border cursor-pointer transition
                             ${form.non_locator
@@ -1061,8 +1052,6 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
             </div>
           </label>
 
-          {/* Top section: image + basic info side by side */}
-          <div className="grid md:grid-cols-2 gap-6">
           {/* Top section: image + basic info side by side */}
           <div className="grid md:grid-cols-2 gap-6">
             {/* Image picker */}
@@ -1124,7 +1113,6 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
                   </div>
                 </div>
               )}
-              </div>
 
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">ID (slug)</label>
@@ -1141,55 +1129,56 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">Response podle tieru lokátoru</label>
-                ...
+                {form.responses.length < 4 && (
+                  <button type="button" onClick={addResponseRow}
+                          className="flex items-center gap-1 px-2 py-1 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+                    <Icons.Plus size={10} />
+                    <span>Přidat řádek</span>
+                  </button>
+                )}
               </div>
-              ...
+
               {form.responses.map((r, idx) => (
-                ...
+                <div key={idx} className="rounded-md glass p-3 border border-sasp-glow/15 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      {['S+', 'S', 'A+', 'A'].map(t => (
+                        <button key={t} type="button" onClick={() => updateResponseTier(idx, t)}
+                                className="px-2 py-1 rounded font-mono text-[10px] font-bold uppercase tracking-wider transition border"
+                                style={{
+                                  background: r.tier === t ? `${TIER_META[t].color}30` : 'transparent',
+                                  color: r.tier === t ? TIER_META[t].color : '#94a3b8',
+                                  borderColor: r.tier === t ? `${TIER_META[t].color}60` : 'rgba(96,165,250,0.15)',
+                                }}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex-1" />
+                    <button type="button" onClick={() => removeResponseRow(idx)}
+                            className="p-1.5 rounded-md text-red-400/70 hover:text-red-400 transition"
+                            title="Smazat řádek">
+                      <Icons.Trash size={12} />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ALL_RESPONSE_CARS.map(car => {
+                      const active = r.cars.includes(car);
+                      return (
+                        <button key={car} type="button" onClick={() => toggleResponseCar(idx, car)}
+                                className={`px-2.5 py-1 rounded font-mono text-[10px] uppercase tracking-wider transition border
+                                            ${active
+                                              ? 'bg-sasp-glow text-sasp-black border-transparent shadow-[0_0_12px_rgba(96,165,250,0.4)]'
+                                              : 'glass text-sasp-glow/70 border-sasp-glow/20 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
+                          {active && '✓ '}{car}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               ))}
             </div>
           )}
-
-            {form.responses.map((r, idx) => (
-              <div key={idx} className="rounded-md glass p-3 border border-sasp-glow/15 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    {['S+', 'S', 'A+', 'A'].map(t => (
-                      <button key={t} type="button" onClick={() => updateResponseTier(idx, t)}
-                              className="px-2 py-1 rounded font-mono text-[10px] font-bold uppercase tracking-wider transition border"
-                              style={{
-                                background: r.tier === t ? `${TIER_META[t].color}30` : 'transparent',
-                                color: r.tier === t ? TIER_META[t].color : '#94a3b8',
-                                borderColor: r.tier === t ? `${TIER_META[t].color}60` : 'rgba(96,165,250,0.15)',
-                              }}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex-1" />
-                  <button type="button" onClick={() => removeResponseRow(idx)}
-                          className="p-1.5 rounded-md text-red-400/70 hover:text-red-400 transition"
-                          title="Smazat řádek">
-                    <Icons.Trash size={12} />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {ALL_RESPONSE_CARS.map(car => {
-                    const active = r.cars.includes(car);
-                    return (
-                      <button key={car} type="button" onClick={() => toggleResponseCar(idx, car)}
-                              className={`px-2.5 py-1 rounded font-mono text-[10px] uppercase tracking-wider transition border
-                                          ${active
-                                            ? 'bg-sasp-glow text-sasp-black border-transparent shadow-[0_0_12px_rgba(96,165,250,0.4)]'
-                                            : 'glass text-sasp-glow/70 border-sasp-glow/20 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
-                        {active && '✓ '}{car}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
 
           {/* Notes */}
           <div>
