@@ -1886,6 +1886,7 @@ function App() {
         responses: form.responses,
         notes: form.notes || '',
         image: imageUrl || null,
+        non_locator: !!form.non_locator,
         updated_by: auth.session?.user?.email || null,
       };
 
