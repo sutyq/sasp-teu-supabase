@@ -458,7 +458,8 @@ function TierBadge({ tier, size = 'md', label = false }) {
 }
 
 function TierResponseRow({ tier, cars }) {
-  const meta = TIER_META[tier];
+  // Fallback for null/missing tier (e.g. non-locator legacy data)
+  const meta = TIER_META[tier] || { color: '#94a3b8', bgStrong: 'rgba(148,163,184,0.18)', bgSoft: 'rgba(148,163,184,0.05)', label: 'BEZ TIERU' };
   return (
     <div className="tier-row"
          style={{
