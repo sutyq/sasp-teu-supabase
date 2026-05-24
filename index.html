@@ -510,7 +510,17 @@ function VehicleImage({ src, alt, className = '' }) {
 }
 
 function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdit, onDelete }) {
-  const tierMeta = TIER_META[v.tier];
+  const isNonLocator = !!v.non_locator;
+  const tierMeta = TIER_META[v.tier] || TIER_META['A'];
+
+  // Non-locator styling: amber theme instead of tier colors
+  const accentColor = isNonLocator ? '#f59e0b' : tierMeta.color;
+  const topStripeBg = isNonLocator
+    ? 'linear-gradient(90deg, transparent, #f59e0b, transparent)'
+    : `linear-gradient(90deg, transparent, ${tierMeta.color}, transparent)`;
+  const imageBgClass = isNonLocator
+    ? 'from-amber-500/20 to-amber-900/5'
+    : `${tierMeta.bgFrom} ${tierMeta.bgTo}`;
 
   return (
     <motion.div
@@ -521,11 +531,11 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
       transition={{ duration: 0.35, delay: Math.min(index, 12) * 0.02, ease: [0.16, 1, 0.3, 1] }}
       whileHover={{ y: -4 }}
       className="group relative text-left clip-corners glass glow-hover rounded-lg overflow-hidden cursor-pointer w-full flex flex-col"
-      style={{ borderColor: 'rgba(96,165,250,0.15)' }}
+      style={{ borderColor: isNonLocator ? 'rgba(245,158,11,0.35)' : 'rgba(96,165,250,0.15)' }}
       onClick={onSelect}
     >
       <div className="absolute top-0 left-0 right-0 h-[2px] z-10"
-           style={{ background: `linear-gradient(90deg, transparent, ${tierMeta.color}, transparent)` }} />
+           style={{ background: topStripeBg }} />
 
       {/* Top-right actions */}
       <div className="absolute top-2 right-2 z-10 flex gap-1">
@@ -550,14 +560,23 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
         </button>
       </div>
 
-      <div className={`relative h-52 md:h-56 bg-gradient-to-br ${tierMeta.bgFrom} ${tierMeta.bgTo}
+      <div className={`relative h-52 md:h-56 bg-gradient-to-br ${imageBgClass}
                        border-b border-sasp-glow/10 overflow-hidden flex items-center justify-center p-3`}>
-        {(v.tier === 'S+' || v.tier === 'S') && (
+        {!isNonLocator && (v.tier === 'S+' || v.tier === 'S') && (
           <div className="absolute inset-0 stripes-warn opacity-25 pointer-events-none z-[1]" />
         )}
         <VehicleImage src={v.image} alt={v.vehicle} className="w-full h-full" />
         <div className="absolute top-2 left-2 z-[2]">
-          <TierBadge tier={v.tier} size="sm" />
+          {isNonLocator ? (
+            <div className="inline-flex items-center gap-1 px-2 h-6 rounded-md font-mono font-bold text-[10px] tracking-wider uppercase
+                            bg-amber-500/25 border border-amber-400/55 text-amber-200"
+                 style={{ boxShadow: '0 0 12px rgba(245,158,11,0.45)' }}>
+              <Icons.AlertTriangle size={10} />
+              N/L
+            </div>
+          ) : (
+            <TierBadge tier={v.tier} size="sm" />
+          )}
         </div>
       </div>
 
@@ -572,17 +591,41 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
         </div>
 
         <div className="space-y-1.5 flex-1">
-          <div className="font-mono text-[9px] uppercase tracking-[0.3em] text-sasp-glow/45">
-            Response podle tieru
-          </div>
-          {(!v.responses || v.responses.length === 0) ? (
-            <div className="text-[10px] font-mono uppercase text-sasp-glow/40 italic">
-              Bez dat
-            </div>
+          {isNonLocator ? (
+            <>
+              <div className="font-mono text-[9px] uppercase tracking-[0.3em] text-amber-300/70">
+                Response jednotky
+              </div>
+              {(!v.responses || v.responses.length === 0 || !v.responses[0]?.cars?.length) ? (
+                <div className="text-[10px] font-mono uppercase text-sasp-glow/40 italic">
+                  Bez response jednotek
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {(v.responses[0].cars || []).map((car, i) => (
+                    <span key={i} className="px-2 py-1 rounded-md font-mono text-[10px] uppercase tracking-wider font-semibold
+                                            bg-amber-500/15 border border-amber-400/35 text-amber-200">
+                      {car}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
-            v.responses.map((r) => (
-              <TierResponseRow key={r.tier} tier={r.tier} cars={r.cars || []} />
-            ))
+            <>
+              <div className="font-mono text-[9px] uppercase tracking-[0.3em] text-sasp-glow/45">
+                Response podle tieru
+              </div>
+              {(!v.responses || v.responses.length === 0) ? (
+                <div className="text-[10px] font-mono uppercase text-sasp-glow/40 italic">
+                  Bez dat
+                </div>
+              ) : (
+                v.responses.map((r) => (
+                  <TierResponseRow key={r.tier} tier={r.tier} cars={r.cars || []} />
+                ))
+              )}
+            </>
           )}
         </div>
 
@@ -603,18 +646,13 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
   );
 }
 
-function SectionTitle({ icon, text }) {
-  return (
-    <div className="flex items-center gap-2 mb-3">
-      <span className="text-sasp-glow">{icon}</span>
-      <h3 className="font-display font-bold text-sm uppercase tracking-[0.3em] text-sasp-glow">{text}</h3>
-      <div className="flex-1 h-px bg-gradient-to-r from-sasp-glow/30 to-transparent" />
-    </div>
-  );
-}
-
 function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDelete }) {
-  const tierMeta = TIER_META[v.tier];
+  const isNonLocator = !!v.non_locator;
+  const tierMeta = TIER_META[v.tier] || TIER_META['A'];
+  const accentColor = isNonLocator ? '#f59e0b' : tierMeta.color;
+  const heroBgClass = isNonLocator
+    ? 'from-amber-500/20 to-amber-900/5'
+    : `${tierMeta.bgFrom} ${tierMeta.bgTo}`;
 
   useEffect(() => {
     document.body.classList.add('modal-open');
@@ -645,11 +683,11 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg
-                   border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+        className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+        style={{ borderColor: isNonLocator ? 'rgba(245,158,11,0.4)' : 'rgba(96,165,250,0.3)' }}
       >
         <div className="absolute top-0 left-0 right-0 h-[2px]"
-             style={{ background: `linear-gradient(90deg, transparent, ${tierMeta.color}, ${tierMeta.color}, transparent)` }} />
+             style={{ background: `linear-gradient(90deg, transparent, ${accentColor}, ${accentColor}, transparent)` }} />
 
         <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
           <div className="flex items-center gap-3">
@@ -660,22 +698,19 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
             {isOfficer && (
               <>
                 <button onClick={() => onEdit(v)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20
-                                   font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
                   <Icons.Edit size={12} />
                   <span>Upravit</span>
                 </button>
                 <button onClick={() => onDelete(v)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-red-400/30
-                                   font-mono text-[10px] uppercase tracking-widest text-red-400/90 hover:text-red-400 hover:border-red-400/60 transition">
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-red-400/30 font-mono text-[10px] uppercase tracking-widest text-red-400/90 hover:text-red-400 hover:border-red-400/60 transition">
                   <Icons.Trash size={12} />
                   <span>Smazat</span>
                 </button>
               </>
             )}
             <button onClick={onTogglePin}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20
-                               font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
               {pinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
               <span>{pinned ? 'Připnuto' : 'Připnout'}</span>
             </button>
@@ -687,19 +722,30 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
           </div>
         </div>
 
-        <div className={`relative bg-gradient-to-br ${tierMeta.bgFrom} ${tierMeta.bgTo} p-6 md:p-8 border-b border-sasp-glow/10`}>
-          <div className="absolute inset-0 stripes-warn opacity-20" />
+        <div className={`relative bg-gradient-to-br ${heroBgClass} p-6 md:p-8 border-b border-sasp-glow/10`}>
+          {!isNonLocator && <div className="absolute inset-0 stripes-warn opacity-20" />}
           <div className="relative grid md:grid-cols-2 gap-6 items-center">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <TierBadge tier={v.tier} size="lg" label />
-                <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/60">Klasifikace hrozby</span>
+                {isNonLocator ? (
+                  <div className="inline-flex items-center gap-2 px-3 h-9 rounded-md font-mono font-bold text-sm tracking-wider uppercase
+                                  bg-amber-500/25 border border-amber-400/55 text-amber-200"
+                       style={{ boxShadow: '0 0 14px rgba(245,158,11,0.45)' }}>
+                    <Icons.AlertTriangle size={14} />
+                    Non-locator
+                  </div>
+                ) : (
+                  <TierBadge tier={v.tier} size="lg" label />
+                )}
+                <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/60">
+                  {isNonLocator ? 'Mimo lokátor systém' : 'Klasifikace hrozby'}
+                </span>
               </div>
               <h2 className="font-display font-bold text-4xl md:text-5xl tracking-wide headline-emboss leading-tight text-glow">
                 {v.vehicle}
               </h2>
               <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">
-                <span>Profil lokátoru</span>
+                <span>{isNonLocator ? 'Non-locator profil' : 'Profil lokátoru'}</span>
                 <span className="text-sasp-glow/30">·</span>
                 <span>Pursuit-grade</span>
                 <span className="text-sasp-glow/30">·</span>
@@ -714,21 +760,48 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
         </div>
 
         <div className="p-6 md:p-8 space-y-8">
-          <section>
-            <SectionTitle icon={<Icons.Radio size={14} />} text="Doporučená response" />
-            <p className="text-[11px] font-mono uppercase tracking-widest text-sasp-glow/50 mb-4">
-              Pro daný tier suspect vozidla použij níže uvedené response jednotky.
-            </p>
-            <div className="space-y-2">
-              {(v.responses || []).map((r, i) => (
-                <motion.div key={r.tier}
-                            initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.05 * i }}>
-                  <TierResponseRow tier={r.tier} cars={r.cars || []} />
-                </motion.div>
-              ))}
-            </div>
-          </section>
+          {isNonLocator ? (
+            <section>
+              <SectionTitle icon={<Icons.Radio size={14} />} text="Response jednotky" />
+              <p className="text-[11px] font-mono uppercase tracking-widest text-sasp-glow/50 mb-4">
+                Doporučená response auta. Vozidlo není součástí lokátor systému, takže bez tier rozlišení.
+              </p>
+              {(!v.responses || v.responses.length === 0 || !v.responses[0]?.cars?.length) ? (
+                <div className="rounded-md glass p-4 border border-sasp-glow/15 text-sasp-glow/50 font-mono text-[11px] uppercase tracking-widest italic">
+                  Žádné response jednotky neuvedeny
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(v.responses[0].cars || []).map((car, i) => (
+                    <motion.span key={i}
+                                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                                 transition={{ delay: 0.04 * i }}
+                                 className="px-3 py-1.5 rounded-md font-mono text-xs uppercase tracking-wider font-bold
+                                            bg-amber-500/15 border border-amber-400/40 text-amber-200"
+                                 style={{ boxShadow: '0 0 12px rgba(245,158,11,0.2)' }}>
+                      {car}
+                    </motion.span>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : (
+            <section>
+              <SectionTitle icon={<Icons.Radio size={14} />} text="Doporučená response" />
+              <p className="text-[11px] font-mono uppercase tracking-widest text-sasp-glow/50 mb-4">
+                Pro daný tier suspect vozidla použij níže uvedené response jednotky.
+              </p>
+              <div className="space-y-2">
+                {(v.responses || []).map((r, i) => (
+                  <motion.div key={r.tier}
+                              initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: 0.05 * i }}>
+                    <TierResponseRow tier={r.tier} cars={r.cars || []} />
+                  </motion.div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {v.notes && (
             <section>
@@ -743,9 +816,11 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
             <SectionTitle icon={<Icons.Activity size={14} />} text="Taktický brief" />
             <div className="rounded-md glass p-4 border border-sasp-glow/15">
               <p className="text-sm text-sasp-ice/80 leading-relaxed">
-                Suspect vozidlo je klasifikováno jako <strong className="text-sasp-glow">{v.tier}-tier</strong>.
-                Při engagement použij doporučené response jednotky podle varianty lokátoru viz výše.
-                {' '}{briefMsg}
+                {isNonLocator ? (
+                  <>Toto vozidlo <strong className="text-amber-300">není součástí lokátor systému</strong>. Použij doporučené response jednotky uvedené výše. Evidováno pro referenci.</>
+                ) : (
+                  <>Suspect vozidlo je klasifikováno jako <strong className="text-sasp-glow">{v.tier}-tier</strong>. Při engagement použij doporučené response jednotky podle varianty lokátoru viz výše. {briefMsg}</>
+                )}
               </p>
             </div>
           </section>
@@ -864,8 +939,6 @@ function LoginModal({ open, onClose }) {
 // VEHICLE EDITOR MODAL (Add + Edit)
 // ============================================================
 function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
-  // vehicle === null → add mode
-  // vehicle === object → edit mode
   const isEdit = !!vehicle;
 
   const [form, setForm] = useState(() => ({
@@ -874,9 +947,12 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
     tier: vehicle?.tier || 'A',
     notes: vehicle?.notes || '',
     image: vehicle?.image || '',
+    non_locator: vehicle?.non_locator || false,
     responses: vehicle?.responses ? JSON.parse(JSON.stringify(vehicle.responses)) : [
       { tier: 'A', cars: [] }
     ],
+    // For non-locator: single car list, independent from responses
+    nl_cars: (vehicle?.non_locator && vehicle?.responses?.[0]?.cars) ? [...vehicle.responses[0].cars] : [],
   }));
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -891,12 +967,11 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
 
   if (!open) return null;
 
-  // Auto-generate ID from name if in add mode
   function updateName(name) {
     setForm(f => ({
       ...f,
       vehicle: name,
-      id: isEdit ? f.id : (slugify(name) + '-' + f.tier.toLowerCase().replace('+', 'plus')),
+      id: isEdit ? f.id : (slugify(name) + (f.non_locator ? '-nl' : ('-' + f.tier.toLowerCase().replace('+', 'plus')))),
     }));
   }
 
@@ -905,6 +980,15 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
       ...f,
       tier,
       id: isEdit ? f.id : (slugify(f.vehicle) + '-' + tier.toLowerCase().replace('+', 'plus')),
+    }));
+  }
+
+  function toggleNonLocator(checked) {
+    setForm(f => ({
+      ...f,
+      non_locator: checked,
+      // Regenerate id if not edit mode
+      id: isEdit ? f.id : (slugify(f.vehicle) + (checked ? '-nl' : ('-' + f.tier.toLowerCase().replace('+', 'plus')))),
     }));
   }
 
@@ -939,6 +1023,13 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
     }));
   }
 
+  function toggleNlCar(car) {
+    setForm(f => {
+      const has = f.nl_cars.includes(car);
+      return { ...f, nl_cars: has ? f.nl_cars.filter(c => c !== car) : [...f.nl_cars, car] };
+    });
+  }
+
   function onImagePick(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -956,17 +1047,31 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
     setError('');
     if (!form.vehicle.trim()) { setError('Název vozidla je povinný'); return; }
     if (!form.id.trim()) { setError('ID je povinné'); return; }
-    if (form.responses.length === 0) { setError('Přidej alespoň jednu response variantu'); return; }
-
+    if (!form.non_locator && form.responses.length === 0) {
+      setError('Přidej alespoň jednu response variantu');
+      return;
+    }
     try {
-      await onSave({ ...form }, imageFile);
+      // Build payload based on non_locator flag
+      let payload;
+      if (form.non_locator) {
+        payload = {
+          ...form,
+          // Store non-locator responses as single row with null tier
+          responses: form.nl_cars.length > 0 ? [{ tier: null, cars: form.nl_cars }] : [],
+        };
+      } else {
+        payload = { ...form };
+      }
+      // Remove UI-only fields
+      delete payload.nl_cars;
+      await onSave(payload, imageFile);
       onClose();
     } catch (err) {
       setError(err.message || 'Chyba při ukládání');
     }
   }
 
-  // Currently shown image (preview > existing)
   const previewSrc = imagePreview || form.image || null;
 
   return (
@@ -992,6 +1097,26 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
         </div>
 
         <div className="p-6 md:p-8 space-y-6">
+          {/* Non-locator toggle */}
+          <label className={`flex items-center gap-3 p-3 rounded-md glass border cursor-pointer transition
+                            ${form.non_locator
+                              ? 'border-amber-400/60 bg-amber-500/10'
+                              : 'border-sasp-glow/15 hover:border-sasp-glow/30'}`}>
+            <input type="checkbox"
+                   checked={form.non_locator}
+                   onChange={(e) => toggleNonLocator(e.target.checked)}
+                   className="!w-auto accent-amber-500" />
+            <div className="flex-1">
+              <div className="font-mono text-[11px] uppercase tracking-widest text-sasp-ice font-bold flex items-center gap-2">
+                {form.non_locator && <Icons.AlertTriangle size={12} className="text-amber-400" />}
+                Non-locator vehicle
+              </div>
+              <div className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/50 mt-0.5">
+                Vozidlo není z lokátoru — bez tier systému
+              </div>
+            </div>
+          </label>
+
           {/* Top section: image + basic info side by side */}
           <div className="grid md:grid-cols-2 gap-6">
             {/* Image picker */}
@@ -1034,23 +1159,25 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
                 <input type="text" value={form.vehicle} onChange={(e) => updateName(e.target.value)} placeholder="např. Itali GTO" />
               </div>
 
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Tier suspect vozidla *</label>
-                <div className="flex gap-1">
-                  {['S', 'A'].map(t => (
-                    <button key={t} type="button" onClick={() => updateTier(t)}
-                            className="flex-1 px-2 py-2 rounded-md font-mono text-xs font-bold uppercase tracking-wider transition border"
-                            style={{
-                              background: form.tier === t ? `linear-gradient(135deg, ${TIER_META[t].color}, ${TIER_META[t].color}dd)` : 'rgba(13,20,36,0.5)',
-                              color: form.tier === t ? '#000' : TIER_META[t].color,
-                              borderColor: form.tier === t ? 'transparent' : `${TIER_META[t].color}40`,
-                              boxShadow: form.tier === t ? `0 0 16px ${TIER_META[t].color}66` : 'none',
-                            }}>
-                      {t}
-                    </button>
-                  ))}
+              {!form.non_locator && (
+                <div>
+                  <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Tier suspect vozidla *</label>
+                  <div className="flex gap-1">
+                    {['S', 'A'].map(t => (
+                      <button key={t} type="button" onClick={() => updateTier(t)}
+                              className="flex-1 px-2 py-2 rounded-md font-mono text-xs font-bold uppercase tracking-wider transition border"
+                              style={{
+                                background: form.tier === t ? `linear-gradient(135deg, ${TIER_META[t].color}, ${TIER_META[t].color}dd)` : 'rgba(13,20,36,0.5)',
+                                color: form.tier === t ? '#000' : TIER_META[t].color,
+                                borderColor: form.tier === t ? 'transparent' : `${TIER_META[t].color}40`,
+                                boxShadow: form.tier === t ? `0 0 16px ${TIER_META[t].color}66` : 'none',
+                              }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">ID (slug)</label>
@@ -1062,59 +1189,89 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
             </div>
           </div>
 
-          {/* Responses editor */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">Response podle tieru lokátoru</label>
-              {form.responses.length < 4 && (
-                <button type="button" onClick={addResponseRow}
-                        className="flex items-center gap-1 px-2 py-1 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
-                  <Icons.Plus size={10} />
-                  <span>Přidat řádek</span>
-                </button>
-              )}
-            </div>
-
-            {form.responses.map((r, idx) => (
-              <div key={idx} className="rounded-md glass p-3 border border-sasp-glow/15 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    {['S+', 'S', 'A+', 'A'].map(t => (
-                      <button key={t} type="button" onClick={() => updateResponseTier(idx, t)}
-                              className="px-2 py-1 rounded font-mono text-[10px] font-bold uppercase tracking-wider transition border"
-                              style={{
-                                background: r.tier === t ? `${TIER_META[t].color}30` : 'transparent',
-                                color: r.tier === t ? TIER_META[t].color : '#94a3b8',
-                                borderColor: r.tier === t ? `${TIER_META[t].color}60` : 'rgba(96,165,250,0.15)',
-                              }}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex-1" />
-                  <button type="button" onClick={() => removeResponseRow(idx)}
-                          className="p-1.5 rounded-md text-red-400/70 hover:text-red-400 transition"
-                          title="Smazat řádek">
-                    <Icons.Trash size={12} />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
+          {/* Response editor - depends on non_locator */}
+          {form.non_locator ? (
+            /* Non-locator: simple car list */
+            <div className="space-y-3">
+              <label className="font-mono text-[10px] uppercase tracking-widest text-amber-300/80 flex items-center gap-2">
+                <Icons.AlertTriangle size={11} />
+                Response jednotky (bez tieru)
+              </label>
+              <div className="rounded-md glass p-3 border border-amber-400/30 bg-amber-500/5">
+                <div className="flex flex-wrap gap-2">
                   {ALL_RESPONSE_CARS.map(car => {
-                    const active = r.cars.includes(car);
+                    const active = form.nl_cars.includes(car);
                     return (
-                      <button key={car} type="button" onClick={() => toggleResponseCar(idx, car)}
-                              className={`px-2.5 py-1 rounded font-mono text-[10px] uppercase tracking-wider transition border
+                      <button key={car} type="button" onClick={() => toggleNlCar(car)}
+                              className={`px-3 py-2 rounded-md font-mono text-xs uppercase tracking-wider transition border
                                           ${active
-                                            ? 'bg-sasp-glow text-sasp-black border-transparent shadow-[0_0_12px_rgba(96,165,250,0.4)]'
+                                            ? 'bg-amber-500/30 text-amber-100 border-amber-400/70 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
                                             : 'glass text-sasp-glow/70 border-sasp-glow/20 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
                         {active && '✓ '}{car}
                       </button>
                     );
                   })}
                 </div>
+                <p className="font-mono text-[9px] uppercase tracking-widest text-amber-300/50 mt-3 leading-relaxed">
+                  Vyber jedno nebo více response aut. Bez tier rozlišení.
+                </p>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            /* Locator: tier-based responses matrix */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">Response podle tieru lokátoru</label>
+                {form.responses.length < 4 && (
+                  <button type="button" onClick={addResponseRow}
+                          className="flex items-center gap-1 px-2 py-1 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
+                    <Icons.Plus size={10} />
+                    <span>Přidat řádek</span>
+                  </button>
+                )}
+              </div>
+
+              {form.responses.map((r, idx) => (
+                <div key={idx} className="rounded-md glass p-3 border border-sasp-glow/15 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      {['S+', 'S', 'A+', 'A'].map(t => (
+                        <button key={t} type="button" onClick={() => updateResponseTier(idx, t)}
+                                className="px-2 py-1 rounded font-mono text-[10px] font-bold uppercase tracking-wider transition border"
+                                style={{
+                                  background: r.tier === t ? `${TIER_META[t].color}30` : 'transparent',
+                                  color: r.tier === t ? TIER_META[t].color : '#94a3b8',
+                                  borderColor: r.tier === t ? `${TIER_META[t].color}60` : 'rgba(96,165,250,0.15)',
+                                }}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex-1" />
+                    <button type="button" onClick={() => removeResponseRow(idx)}
+                            className="p-1.5 rounded-md text-red-400/70 hover:text-red-400 transition"
+                            title="Smazat řádek">
+                      <Icons.Trash size={12} />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ALL_RESPONSE_CARS.map(car => {
+                      const active = r.cars.includes(car);
+                      return (
+                        <button key={car} type="button" onClick={() => toggleResponseCar(idx, car)}
+                                className={`px-2.5 py-1 rounded font-mono text-[10px] uppercase tracking-wider transition border
+                                            ${active
+                                              ? 'bg-sasp-glow text-sasp-black border-transparent shadow-[0_0_12px_rgba(96,165,250,0.4)]'
+                                              : 'glass text-sasp-glow/70 border-sasp-glow/20 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
+                          {active && '✓ '}{car}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Notes */}
           <div>
@@ -1526,144 +1683,6 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
       </motion.div>
     </motion.div>
   );
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose}
-    >
-      <motion.div
-        onClick={(e) => e.stopPropagation()}
-        initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
-      >
-        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
-          <div className="flex items-center gap-3">
-            <Icons.Shield size={18} className="text-sasp-glow" />
-            <h2 className="font-display font-bold text-lg tracking-wider text-sasp-ice">TEU Admin Panel</h2>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/50">Officer Management</span>
-          </div>
-          <button onClick={onClose}
-                  className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition">
-            <Icons.Close size={16} />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Add new officer */}
-          <div>
-            <SectionTitle icon={<Icons.Plus size={14} />} text="Přidat officera" />
-            <form onSubmit={addOfficer} className="space-y-3 rounded-md glass p-4 border border-sasp-glow/15">
-              <div className="grid md:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">E-mail *</label>
-                  <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
-                         placeholder="officer@example.com" required />
-                </div>
-                <div>
-                  <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Jméno (volitelné)</label>
-                  <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
-                         placeholder="např. Petr" />
-                </div>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
-                <input type="checkbox" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)}
-                       className="!w-auto accent-sasp-glow" />
-                <span>Udělit admin práva (může spravovat ostatní)</span>
-              </label>
-              <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 leading-relaxed">
-                ⚠️ Aby se officer mohl přihlásit, musí si nejprve sám vytvořit účet
-                přes "Officer login → Vytvořit nový účet" se stejným emailem.
-              </p>
-              <button type="submit" disabled={busy}
-                      className="flex items-center gap-2 px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition border bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-50">
-                {busy ? <Icons.Loader size={12} /> : <Icons.Plus size={12} />}
-                <span>{busy ? 'Přidávám...' : 'Přidat officera'}</span>
-              </button>
-            </form>
-          </div>
-
-          {/* Officer list */}
-          <div>
-            <SectionTitle icon={<Icons.Shield size={14} />} text={`Současní officeři (${officers.length})`} />
-            {loading ? (
-              <div className="py-8 text-center">
-                <Icons.Loader size={24} className="mx-auto text-sasp-glow/60" />
-              </div>
-            ) : officers.length === 0 ? (
-              <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-sasp-glow/50">
-                Žádní officeři
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {officers.map(o => {
-                  const isSelf = o.email === currentUserEmail;
-                  return (
-                    <div key={o.id} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-md bg-sasp-glow/10 border border-sasp-glow/30">
-                        {o.is_admin ? <Icons.Shield size={18} className="text-amber-400" /> : <Icons.Shield size={18} className="text-sasp-glow/70" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || o.email}</span>
-                          {o.is_admin && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-amber-500/20 border border-amber-400/40 text-amber-300">
-                              Admin
-                            </span>
-                          )}
-                          {isSelf && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-sasp-glow/20 border border-sasp-glow/40 text-sasp-glow">
-                              Ty
-                            </span>
-                          )}
-                        </div>
-                        <div className="font-mono text-[10px] text-sasp-glow/50 truncate">{o.email}</div>
-                      </div>
-                      <button onClick={() => toggleAdmin(o)} disabled={busy || isSelf}
-                              title={o.is_admin ? 'Odebrat admin práva' : 'Udělit admin práva'}
-                              className={`p-2 rounded-md border transition disabled:opacity-30 disabled:cursor-not-allowed
-                                          ${o.is_admin
-                                            ? 'border-amber-400/40 text-amber-400 hover:bg-amber-500/10'
-                                            : 'border-sasp-glow/20 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
-                        <Icons.Shield size={14} />
-                      </button>
-                      <button onClick={() => setConfirmRemove(o)} disabled={busy || isSelf}
-                              title={isSelf ? 'Nemůžeš odebrat sám sebe' : 'Odebrat officera'}
-                              className="p-2 rounded-md border border-red-400/30 text-red-400/80 hover:text-red-400 hover:border-red-400/60 transition disabled:opacity-30 disabled:cursor-not-allowed">
-                        <Icons.Trash size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
-              {error}
-            </div>
-          )}
-        </div>
-
-        {/* Confirm remove dialog */}
-        <AnimatePresence>
-          {confirmRemove && (
-            <ConfirmDialog
-              open={!!confirmRemove}
-              title="Odebrat officera?"
-              message={`Opravdu chceš odebrat ${confirmRemove.display_name || confirmRemove.email}? Ztratí přístup k editaci. Jeho účet v Auth zůstane zachován.`}
-              confirmText="Odebrat"
-              danger
-              onCancel={() => setConfirmRemove(null)}
-              onConfirm={() => removeOfficer(confirmRemove)}
-            />
-          )}
-        </AnimatePresence>
-      </motion.div>
-    </motion.div>
-  );
 }
 // ============================================================
 // CONFIRM DIALOG
@@ -1915,8 +1934,10 @@ function App() {
   const filtered = useMemo(() => {
     let list = vehicles;
     if (showPinnedOnly) list = list.filter(v => pinned.has(v.id));
-    if (filters.tier) {
-      list = list.filter(v => v.tier === filters.tier || (v.responses || []).some(r => r.tier === filters.tier));
+    if (filters.tier === '__NL__') {
+      list = list.filter(v => v.non_locator);
+    } else if (filters.tier) {
+      list = list.filter(v => !v.non_locator && (v.tier === filters.tier || (v.responses || []).some(r => r.tier === filters.tier)));
     }
     if (filters.response) {
       list = list.filter(v => (v.responses || []).some(r => (r.cars || []).includes(filters.response)));
@@ -2086,6 +2107,9 @@ function App() {
                     {t}
                   </FilterChip>
                 ))}
+                <FilterChip active={filters.tier === '__NL__'} onClick={() => setFilters(f => ({...f, tier: '__NL__'}))} color="#71717a">
+                  Non-locator
+                </FilterChip>
               </div>
             </div>
             <div className="flex flex-col gap-2">
