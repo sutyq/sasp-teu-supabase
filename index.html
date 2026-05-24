@@ -293,9 +293,12 @@ function useAuth() {
       }
     });
 
-    // Listen for auth changes
+    // Listen for all subsequent auth changes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED)
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
-      if (mounted) setSession(sess);
+      if (mounted) {
+        setSession(sess);
+        setLoading(false);
+      }
     });
 
     return () => { mounted = false; sub.subscription.unsubscribe(); };
@@ -473,7 +476,7 @@ function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, onAdminPanel
       <div className="border-t border-sasp-glow/10 bg-sasp-carbon/60 overflow-hidden">
         <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-1.5 flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.25em] text-sasp-glow/60">
           <span className={connected ? "text-emerald-400" : "text-zinc-500"}>● {connected ? 'LIVE' : 'STATIC'}</span>
-          <span className="hidden sm:inline">Databáze lokátorů v2.0 · Supabase</span>
+          <span className="hidden sm:inline">Databáze lokátorů v 0.2</span>
           <span className="text-sasp-glow/30">/</span>
           <span className="hidden sm:inline">{connected ? 'Synchronizace: realtime' : 'Připojení odpojeno'}</span>
           <span className="text-sasp-glow/30 hidden md:inline">/</span>
@@ -898,10 +901,17 @@ function LoginModal({ open, onClose }) {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setError('Účet vytvořen! Zkontroluj e-mail pro potvrzení (pokud je email confirmation zapnutý).');
-        setMode('login');
+        // If signup returned a session immediately (email confirmation off),
+        // session is now live - just close the modal.
+        if (data?.session) {
+          onClose();
+        } else {
+          // Email confirmation required - tell user and switch to login mode.
+          setError('Účet vytvořen! Zkontroluj e-mail pro potvrzení.');
+          setMode('login');
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
