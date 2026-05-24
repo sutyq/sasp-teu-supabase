@@ -647,6 +647,16 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
   );
 }
 
+function SectionTitle({ icon, text }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <span className="text-sasp-glow">{icon}</span>
+      <h3 className="font-display font-bold text-sm uppercase tracking-[0.3em] text-sasp-glow">{text}</h3>
+      <div className="flex-1 h-px bg-gradient-to-r from-sasp-glow/30 to-transparent" />
+    </div>
+  );
+}
+
 function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDelete }) {
   const isNonLocator = !!v.non_locator;
   const tierMeta = TIER_META[v.tier] || TIER_META['A'];
