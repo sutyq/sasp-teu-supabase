@@ -251,6 +251,7 @@ const TIER_META = {
   'A+': { color: '#a855f7', bgStrong: 'rgba(168,85,247,0.18)', bgSoft: 'rgba(168,85,247,0.05)', label: 'ZVÝŠENÝ',    bgFrom: 'from-purple-500/15', bgTo: 'to-purple-900/5' },
   'A':  { color: '#3b82f6', bgStrong: 'rgba(59,130,246,0.18)', bgSoft: 'rgba(59,130,246,0.05)', label: 'STANDARD',   bgFrom: 'from-blue-500/15',   bgTo: 'to-blue-900/5' },
 };
+// Legacy fallback list — dynamic fleet from `response_vehicles` table is used at runtime.
 const ALL_RESPONSE_CARS = ['Comet', 'Dominator', 'Vigero', 'Gauntlet', 'STX'];
 
 const STORAGE_KEY_PINNED = 'teu_pinned_v1';
@@ -312,6 +313,53 @@ function useAuth() {
   }, [refreshOfficer]);
 
   return { session, officer, loading, refreshOfficer };
+}
+
+// ============================================================
+// RESPONSE VEHICLES HOOK (dynamic fleet from DB)
+// ============================================================
+function useResponseVehicles() {
+  const [fleet, setFleet] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const reload = useCallback(async () => {
+    if (!supabase) { setLoading(false); return; }
+    const { data, error } = await supabase
+      .from('response_vehicles')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+    if (!error) setFleet(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    reload();
+    if (!supabase) return;
+    const channel = supabase
+      .channel('response-vehicles-realtime')
+      .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'response_vehicles' },
+          (payload) => {
+            if (payload.eventType === 'INSERT') {
+              setFleet(prev => {
+                if (prev.some(r => r.id === payload.new.id)) return prev;
+                return [...prev, payload.new].sort((a,b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+              });
+            } else if (payload.eventType === 'UPDATE') {
+              setFleet(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
+            } else if (payload.eventType === 'DELETE') {
+              setFleet(prev => prev.filter(r => r.id !== payload.old.id));
+            }
+          })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [reload]);
+
+  // Convenience: only active fleet for dropdowns/selectors
+  const activeNames = useMemo(() => fleet.filter(r => r.active).map(r => r.name), [fleet]);
+
+  return { fleet, activeNames, loading, reload };
 }
 
 // ============================================================
@@ -949,7 +997,7 @@ function LoginModal({ open, onClose }) {
 // ============================================================
 // VEHICLE EDITOR MODAL (Add + Edit)
 // ============================================================
-function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
+function VehicleEditor({ open, vehicle, onClose, onSave, isUploading, responseVehicles }) {
   const isEdit = !!vehicle;
 
   const [form, setForm] = useState(() => ({
@@ -1209,20 +1257,26 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
                 Response jednotky (bez tieru)
               </label>
               <div className="rounded-md glass p-3 border border-amber-400/30 bg-amber-500/5">
-                <div className="flex flex-wrap gap-2">
-                  {ALL_RESPONSE_CARS.map(car => {
-                    const active = form.nl_cars.includes(car);
-                    return (
-                      <button key={car} type="button" onClick={() => toggleNlCar(car)}
-                              className={`px-3 py-2 rounded-md font-mono text-xs uppercase tracking-wider transition border
-                                          ${active
-                                            ? 'bg-amber-500/30 text-amber-100 border-amber-400/70 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
-                                            : 'glass text-sasp-glow/70 border-sasp-glow/20 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
-                        {active && '✓ '}{car}
-                      </button>
-                    );
-                  })}
-                </div>
+                {(!responseVehicles || responseVehicles.length === 0) ? (
+                  <div className="text-amber-300/60 font-mono text-[10px] uppercase tracking-widest italic py-2">
+                    Žádná aktivní response auta. Přidej je v Admin Panelu → Fleet.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {responseVehicles.map(car => {
+                      const active = form.nl_cars.includes(car);
+                      return (
+                        <button key={car} type="button" onClick={() => toggleNlCar(car)}
+                                className={`px-3 py-2 rounded-md font-mono text-xs uppercase tracking-wider transition border
+                                            ${active
+                                              ? 'bg-amber-500/30 text-amber-100 border-amber-400/70 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                                              : 'glass text-sasp-glow/70 border-sasp-glow/20 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
+                          {active && '✓ '}{car}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <p className="font-mono text-[9px] uppercase tracking-widest text-amber-300/50 mt-3 leading-relaxed">
                   Vyber jedno nebo více response aut. Bez tier rozlišení.
                 </p>
@@ -1266,7 +1320,11 @@ function VehicleEditor({ open, vehicle, onClose, onSave, isUploading }) {
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {ALL_RESPONSE_CARS.map(car => {
+                    {(!responseVehicles || responseVehicles.length === 0) ? (
+                      <span className="text-sasp-glow/40 font-mono text-[10px] uppercase tracking-widest italic">
+                        Žádná aktivní response auta · Admin Panel → Fleet
+                      </span>
+                    ) : responseVehicles.map(car => {
                       const active = r.cars.includes(car);
                       return (
                         <button key={car} type="button" onClick={() => toggleResponseCar(idx, car)}
@@ -1488,6 +1546,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
           <div className="flex gap-1 px-4 md:px-6 -mb-px">
             {[
               { id: 'officers', label: 'Officeři', icon: <Icons.Shield size={12} /> },
+              { id: 'fleet', label: 'Fleet', icon: <Icons.Car size={12} /> },
               { id: 'activity', label: 'Aktivita', icon: <Icons.Activity size={12} /> },
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -1671,6 +1730,11 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
             </div>
           )}
 
+          {/* ===== FLEET TAB ===== */}
+          {tab === 'fleet' && (
+            <FleetManagementTab currentUserEmail={currentUserEmail} />
+          )}
+
           {error && (
             <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
               {error}
@@ -1695,6 +1759,449 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     </motion.div>
   );
 }
+// ============================================================
+// FLEET MANAGEMENT TAB (response_vehicles CRUD)
+// ============================================================
+function FleetManagementTab({ currentUserEmail }) {
+  const [fleet, setFleet] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorItem, setEditorItem] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  // For delete confirmation: count of vehicles using this car name
+  const [usageCount, setUsageCount] = useState(0);
+
+  async function loadFleet() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('response_vehicles')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+    if (error) setError(error.message);
+    else setFleet(data || []);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadFleet();
+    const channel = supabase.channel('response-vehicles-admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'response_vehicles' },
+          () => loadFleet())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  async function toggleActive(item) {
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('response_vehicles')
+        .update({ active: !item.active, updated_at: new Date().toISOString() })
+        .eq('id', item.id);
+      if (error) throw error;
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openDeleteConfirm(item) {
+    // Count vehicles that reference this car name
+    const { data, error } = await supabase.from('vehicles').select('responses');
+    if (!error && data) {
+      let count = 0;
+      for (const v of data) {
+        const found = (v.responses || []).some(r => (r.cars || []).includes(item.name));
+        if (found) count++;
+      }
+      setUsageCount(count);
+    } else {
+      setUsageCount(0);
+    }
+    setConfirmDelete(item);
+  }
+
+  async function deleteItem(item) {
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('response_vehicles').delete().eq('id', item.id);
+      if (error) throw error;
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+      setConfirmDelete(null);
+      setUsageCount(0);
+    }
+  }
+
+  const filtered = fleet.filter(r => {
+    if (!showInactive && !r.active) return false;
+    if (search.trim() && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+        <SectionTitle icon={<Icons.Car size={14} />} text={`Response vozidla (${fleet.length})`} />
+      </div>
+
+      <div className="flex flex-wrap gap-3 mb-4 p-3 glass rounded-md border border-sasp-glow/15">
+        <div className="flex-1 min-w-[160px]">
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                 placeholder="Hledat..." className="!py-1.5 !text-xs" />
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
+          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}
+                 className="!w-auto accent-sasp-glow" />
+          <span>Zobrazit neaktivní</span>
+        </label>
+        <button type="button" onClick={() => { setEditorItem(null); setEditorOpen(true); }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70">
+          <Icons.Plus size={12} />
+          <span>Přidat vozidlo</span>
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="py-8 text-center"><Icons.Loader size={24} className="mx-auto text-sasp-glow/60" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-sasp-glow/50">
+          {fleet.length === 0 ? 'Žádná response vozidla. Přidej první.' : 'Nic neodpovídá filtru.'}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {filtered.map(item => (
+            <motion.div key={item.id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                        className="relative rounded-md glass border overflow-hidden flex flex-col"
+                        style={{ borderColor: item.active ? 'rgba(96,165,250,0.25)' : 'rgba(96,165,250,0.08)', opacity: item.active ? 1 : 0.55 }}>
+              <div className="relative h-32 bg-gradient-to-br from-sasp-deep/40 to-sasp-carbon/60 border-b border-sasp-glow/10 overflow-hidden flex items-center justify-center p-2">
+                <VehicleImage src={item.image_url} alt={item.name} className="w-full h-full" />
+                <div className="absolute top-1.5 left-1.5">
+                  {item.active ? (
+                    <span className="px-1.5 py-0.5 rounded font-mono text-[9px] uppercase tracking-widest font-bold bg-emerald-500/25 border border-emerald-400/50 text-emerald-200">
+                      Aktivní
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded font-mono text-[9px] uppercase tracking-widest font-bold bg-zinc-500/25 border border-zinc-400/40 text-zinc-300">
+                      Neaktivní
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="p-2.5 flex flex-col gap-1.5 flex-1">
+                <div className="font-display font-bold text-sasp-ice text-base truncate" title={item.name}>{item.name}</div>
+                {item.notes && (
+                  <div className="font-mono text-[10px] text-sasp-glow/50 italic clamp-2">{item.notes}</div>
+                )}
+                <div className="flex gap-1 mt-auto pt-1.5 border-t border-sasp-glow/10">
+                  <button onClick={() => { setEditorItem(item); setEditorOpen(true); }}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded font-mono text-[9px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow border border-sasp-glow/15 hover:border-sasp-glow/40 transition">
+                    <Icons.Edit size={10} />
+                    <span>Upravit</span>
+                  </button>
+                  <button onClick={() => toggleActive(item)} disabled={busy}
+                          title={item.active ? 'Deaktivovat' : 'Aktivovat'}
+                          className="px-2 py-1 rounded border border-sasp-glow/15 text-sasp-glow/70 hover:text-sasp-glow hover:border-sasp-glow/40 transition disabled:opacity-50">
+                    {item.active ? <Icons.CloudOff size={10} /> : <Icons.Cloud size={10} />}
+                  </button>
+                  <button onClick={() => openDeleteConfirm(item)} disabled={busy}
+                          className="px-2 py-1 rounded border border-red-400/25 text-red-400/80 hover:text-red-400 hover:border-red-400/60 transition disabled:opacity-50">
+                    <Icons.Trash size={10} />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
+          {error}
+        </div>
+      )}
+
+      <AnimatePresence>
+        {editorOpen && (
+          <FleetEditor
+            open={editorOpen}
+            item={editorItem}
+            existingNames={fleet.map(r => r.name)}
+            onClose={() => { setEditorOpen(false); setEditorItem(null); }}
+            onSaved={() => { setEditorOpen(false); setEditorItem(null); }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <ConfirmDialog
+            open={!!confirmDelete}
+            title="Smazat response vozidlo?"
+            message={
+              usageCount > 0
+                ? `"${confirmDelete.name}" je použité ve ${usageCount} ${usageCount === 1 ? 'vozidle' : 'vozidlech'}. Smazání ho odebere ze seznamu při přidávání nových, ale existující reference v databázi zůstanou. Pokračovat?`
+                : `Opravdu chceš smazat "${confirmDelete.name}"?`
+            }
+            confirmText="Smazat"
+            danger
+            onCancel={() => { setConfirmDelete(null); setUsageCount(0); }}
+            onConfirm={() => deleteItem(confirmDelete)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================
+// FLEET EDITOR (add/edit response vehicle)
+// ============================================================
+function FleetEditor({ open, item, existingNames, onClose, onSaved }) {
+  const isEdit = !!item;
+  const [form, setForm] = useState({
+    name: item?.name || '',
+    image_url: item?.image_url || '',
+    notes: item?.notes || '',
+    active: item?.active ?? true,
+    sort_order: item?.sort_order ?? 0,
+  });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  function onImagePick(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Obrázek je větší než 5 MB');
+      return;
+    }
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setImagePreview(ev.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSave() {
+    setError('');
+    if (!form.name.trim()) { setError('Název je povinný'); return; }
+    const nameTrim = form.name.trim();
+    // Check uniqueness (case-insensitive)
+    const conflict = existingNames.some(n => n.toLowerCase() === nameTrim.toLowerCase() && (!isEdit || n.toLowerCase() !== item.name.toLowerCase()));
+    if (conflict) { setError(`Vozidlo "${nameTrim}" už existuje`); return; }
+
+    setBusy(true);
+    try {
+      let imageUrl = form.image_url;
+
+      if (imageFile) {
+        const ext = imageFile.name.split('.').pop().toLowerCase();
+        const slug = nameTrim.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const path = `fleet-${slug}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from(CFG.STORAGE_BUCKET || 'vehicles')
+          .upload(path, imageFile, { cacheControl: '3600', upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage
+          .from(CFG.STORAGE_BUCKET || 'vehicles')
+          .getPublicUrl(path);
+        imageUrl = urlData.publicUrl;
+      }
+
+      const payload = {
+        name: nameTrim,
+        image_url: imageUrl || null,
+        notes: form.notes || '',
+        active: !!form.active,
+        sort_order: Number(form.sort_order) || 0,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (isEdit) {
+        // If name changed, also propagate to all vehicles.responses[].cars references
+        const oldName = item.name;
+        const { error } = await supabase.from('response_vehicles').update(payload).eq('id', item.id);
+        if (error) throw error;
+
+        if (oldName !== nameTrim) {
+          // Update all vehicles referencing the old name
+          const { data: affected } = await supabase.from('vehicles').select('id, responses');
+          if (affected) {
+            for (const v of affected) {
+              let dirty = false;
+              const newResponses = (v.responses || []).map(r => {
+                const newCars = (r.cars || []).map(c => {
+                  if (c === oldName) { dirty = true; return nameTrim; }
+                  return c;
+                });
+                return { ...r, cars: newCars };
+              });
+              if (dirty) {
+                await supabase.from('vehicles').update({ responses: newResponses }).eq('id', v.id);
+              }
+            }
+          }
+        }
+      } else {
+        const { error } = await supabase.from('response_vehicles').insert(payload);
+        if (error) throw error;
+      }
+      onSaved && onSaved();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const previewSrc = imagePreview || form.image_url || null;
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
+          <div className="flex items-center gap-3">
+            {isEdit ? <Icons.Edit size={18} className="text-sasp-glow" /> : <Icons.Plus size={18} className="text-emerald-400" />}
+            <h2 className="font-display font-bold text-lg tracking-wider text-sasp-ice">
+              {isEdit ? `Upravit · ${item.name}` : 'Nové response vozidlo'}
+            </h2>
+          </div>
+          <button onClick={onClose} disabled={busy}
+                  className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition disabled:opacity-50">
+            <Icons.Close size={16} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Název *</label>
+            <input type="text" value={form.name} onChange={(e) => setForm(f => ({...f, name: e.target.value}))}
+                   placeholder="např. Comet" />
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">Obrázek</label>
+              <div className="relative h-36 rounded-lg glass border border-sasp-glow/15 flex items-center justify-center overflow-hidden">
+                {previewSrc ? (
+                  <VehicleImage src={previewSrc} alt={form.name} className="w-full h-full" />
+                ) : (
+                  <div className="text-center text-sasp-glow/40">
+                    <Icons.Car size={32} className="mx-auto mb-1 opacity-50" />
+                    <div className="font-mono text-[9px] uppercase tracking-widest">Žádný obrázek</div>
+                  </div>
+                )}
+              </div>
+              <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={onImagePick} className="hidden" />
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition disabled:opacity-50">
+                  <Icons.Upload size={11} />
+                  <span>Nahrát</span>
+                </button>
+                {(form.image_url || imagePreview) && (
+                  <button type="button" onClick={() => { setImageFile(null); setImagePreview(null); setForm(f => ({...f, image_url: ''})); }} disabled={busy}
+                          className="px-2 py-1.5 rounded-md glass border border-red-400/30 text-red-400/90 hover:text-red-400 hover:border-red-400/60 transition disabled:opacity-50">
+                    <Icons.Trash size={11} />
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Nebo URL obrázku</label>
+                <input type="text" value={form.image_url} onChange={(e) => { setForm(f => ({...f, image_url: e.target.value})); setImagePreview(null); setImageFile(null); }}
+                       placeholder="https://..." />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Poznámka</label>
+                <textarea value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))}
+                          rows={3} placeholder="např. Standardní pursuit jednotka" />
+              </div>
+
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Pořadí (sort)</label>
+                <input type="text" value={form.sort_order}
+                       onChange={(e) => setForm(f => ({...f, sort_order: e.target.value.replace(/[^0-9]/g, '')}))}
+                       placeholder="0" />
+                <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 mt-1">
+                  Nižší číslo = výš v seznamu
+                </p>
+              </div>
+
+              <label className={`flex items-center gap-2 p-2.5 rounded-md glass border cursor-pointer transition
+                                ${form.active ? 'border-emerald-400/40 bg-emerald-500/5' : 'border-sasp-glow/15'}`}>
+                <input type="checkbox" checked={form.active} onChange={(e) => setForm(f => ({...f, active: e.target.checked}))}
+                       className="!w-auto accent-emerald-500" />
+                <div className="flex-1">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-sasp-ice font-bold">
+                    {form.active ? 'Aktivní' : 'Neaktivní'}
+                  </div>
+                  <div className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/50 mt-0.5">
+                    Neaktivní se nezobrazí při přidávání vozidla
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-sasp-glow/10">
+            <button type="button" onClick={onClose} disabled={busy}
+                    className="px-4 py-2 rounded-md glass border border-sasp-glow/20 font-mono text-[11px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition disabled:opacity-50">
+              Zrušit
+            </button>
+            <button type="button" onClick={handleSave} disabled={busy}
+                    className="px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-50 flex items-center gap-2">
+              {busy ? <Icons.Loader size={12} /> : <Icons.Check size={12} />}
+              <span>{busy ? 'Ukládám...' : (isEdit ? 'Uložit změny' : 'Vytvořit')}</span>
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ============================================================
 // CONFIRM DIALOG
 // ============================================================
@@ -1766,6 +2273,8 @@ function SetupHint() {
 function App() {
   const auth = useAuth();
   const isOfficer = !!auth.officer;
+
+  const { fleet: responseFleet, activeNames: activeResponseNames } = useResponseVehicles();
 
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2128,7 +2637,7 @@ function App() {
               <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/50">Response jednotka</span>
               <div className="flex flex-wrap gap-1.5">
                 <FilterChip active={filters.response === null} onClick={() => setFilters(f => ({...f, response: null}))}>Vše</FilterChip>
-                {ALL_RESPONSE_CARS.map(c => (
+                {activeResponseNames.map(c => (
                   <FilterChip key={c} active={filters.response === c} onClick={() => setFilters(f => ({...f, response: c}))}>{c}</FilterChip>
                 ))}
               </div>
@@ -2214,6 +2723,7 @@ function App() {
             open={editorOpen}
             vehicle={editorVehicle}
             isUploading={syncing}
+            responseVehicles={activeResponseNames}
             onClose={() => { setEditorOpen(false); setEditorVehicle(null); }}
             onSave={saveVehicle}
           />
