@@ -723,13 +723,6 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
     };
   }, [onClose]);
 
-  const briefMsg = (() => {
-    if (v.tier === 'S+') return 'Top-tier suspect — koordinuj se vzdušnou podporou a spike strips.';
-    if (v.tier === 'S') return 'Udržuj vizuální kontakt; očekávej rychlé manévry a vysokou rychlost.';
-    if (v.tier === 'A+') return 'Standardní pronásledování se zvýšenou opatrností.';
-    return 'Standardní intercept protokol.';
-  })();
-
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
@@ -870,19 +863,6 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
               </div>
             </section>
           )}
-
-          <section>
-            <SectionTitle icon={<Icons.Activity size={14} />} text="Taktický brief" />
-            <div className="rounded-md glass p-4 border border-sasp-glow/15">
-              <p className="text-sm text-sasp-ice/80 leading-relaxed">
-                {isNonLocator ? (
-                  <>Toto vozidlo <strong className="text-amber-300">není součástí lokátor systému</strong>. Použij doporučené response jednotky uvedené výše. Evidováno pro referenci.</>
-                ) : (
-                  <>Suspect vozidlo je klasifikováno jako <strong className="text-sasp-glow">{v.tier}-tier</strong>. Při engagement použij doporučené response jednotky podle varianty lokátoru viz výše. {briefMsg}</>
-                )}
-              </p>
-            </div>
-          </section>
         </div>
       </motion.div>
     </motion.div>
@@ -2776,8 +2756,12 @@ function App() {
             <span>Interní · TEU-DB · ÚROVEŇ 3</span>
           </div>
           <h1 className="font-display font-bold text-4xl md:text-6xl tracking-wide headline-emboss leading-[1.05] text-glow mb-3">
-            Databáze response jednotek
+            Databáze response<br/>jednotek
           </h1>
+          <p className="text-sasp-ice/60 text-base md:text-lg leading-relaxed max-w-2xl">
+            Tier list suspect vozidel a doporučených pursuit jednotek. Cloud sync přes Supabase —
+            změny se okamžitě promítnou všem připojeným důstojníkům.
+          </p>
         </motion.div>
 
         {/* Search */}
