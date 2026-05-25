@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>SASP · TEU · Databáze lokátorů</title>
 <meta name="description" content="San Andreas State Police — Traffic Enforcement Unit. Interní databáze suspect vozidel s realtime sync přes Supabase." />
-<!-- Cache control: always check for new version (build v0.4) -->
+<!-- Cache control: always check for new version (build v0.5) -->
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="pragma" content="no-cache" />
 <meta http-equiv="expires" content="0" />
-<meta name="build-version" content="0.4" />
+<meta name="build-version" content="0.5" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23050912'/%3E%3Cpath d='M50 12 L82 24 V52 C82 70 67 84 50 90 C33 84 18 70 18 52 V24 Z' fill='none' stroke='%2360a5fa' stroke-width='4'/%3E%3Ctext x='50' y='60' font-family='monospace' font-size='28' font-weight='bold' text-anchor='middle' fill='%2360a5fa'%3ETEU%3C/text%3E%3C/svg%3E" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -259,7 +259,7 @@ const TIER_META = {
 // Legacy fallback list — dynamic fleet from `response_vehicles` table is used at runtime.
 const ALL_RESPONSE_CARS = ['Comet', 'Dominator', 'Vigero', 'Gauntlet', 'STX'];
 
-const APP_VERSION = '0.4';
+const APP_VERSION = '0.5';
 const STORAGE_KEY_PINNED = 'teu_pinned_v1';
 
 function loadSet(key) {
@@ -404,7 +404,7 @@ function ConnectionStatus({ connected, syncing }) {
   );
 }
 
-function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, connected, syncing }) {
+function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, connected, syncing }) {
   const { officer, session } = auth;
   const isOfficer = !!officer;
 
@@ -472,10 +472,10 @@ function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, onAdminPanel
           </button>
         )}
 
-        <button onClick={onCommand}
+        <button onClick={onChangelog}
                 className="hidden md:flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15">
-          <Icons.Cmd size={12} />
-          <span>Ctrl+K</span>
+          <Icons.Activity size={12} />
+          <span>v{APP_VERSION}</span>
         </button>
       </div>
 
@@ -2417,6 +2417,160 @@ function FleetEditor({ open, item, existingNames, onClose, onSaved }) {
 }
 
 // ============================================================
+// CHANGELOG
+// ============================================================
+const CHANGELOG = [
+  {
+    version: '0.5',
+    date: '25. 5. 2026',
+    changes: [
+      { type: 'new', text: 'Changelog v hlavičce — klikni na verzi vlevo nahoře pro historii všech změn.' },
+      { type: 'change', text: 'Odstraněna zkratka Ctrl+K (rychlé vyhledávání) — používej search vstup nahoře.' },
+    ],
+  },
+  {
+    version: '0.4',
+    date: '25. 5. 2026',
+    changes: [
+      { type: 'fix', text: 'Oprava bugu: při smazání celého vyhledávání (Ctrl+A → Delete) zůstávala jen jedna karta místo všech vozidel.' },
+      { type: 'change', text: 'Odstraněna zkratka Ctrl+K, nahrazena tlačítkem se zobrazením verze.' },
+      { type: 'new', text: 'Přidán changelog v hlavičce — historie změn a novinek.' },
+    ],
+  },
+  {
+    version: '0.3',
+    date: '25. 5. 2026',
+    changes: [
+      { type: 'perf', text: 'Optimalizace výkonu — zmenšen blur efekt, lepší scroll plynulost na slabším HW.' },
+      { type: 'change', text: 'Přidána cache-busting hlavička — nová verze se uživatelům projeví bez Ctrl+Shift+R.' },
+      { type: 'change', text: 'Odstraněn taktický brief z detailu vozidla.' },
+    ],
+  },
+  {
+    version: '0.2',
+    date: '24. 5. 2026',
+    changes: [
+      { type: 'security', text: 'Zpřísněno RLS — čtení databáze omezeno jen pro officers, nikoli pro všechny přihlášené.' },
+      { type: 'new', text: 'Účty čekající na schválení vidí amber screen místo prázdné databáze.' },
+      { type: 'new', text: 'Detail diff v activity logu — vidíš co konkrétně se ve vozidle změnilo (před/po).' },
+      { type: 'new', text: 'Jména místo emailů v activity logu — display_name z officers tabulky.' },
+      { type: 'fix', text: 'Oprava triggeru log_activity — nepadá při operacích na response_vehicles.' },
+      { type: 'fix', text: 'Oprava ukládání — non_locator flag se teď správně zapisuje do DB při vytvoření vozidla.' },
+    ],
+  },
+  {
+    version: '0.1',
+    date: '23. 5. 2026',
+    changes: [
+      { type: 'new', text: 'Fleet Management — správa response vozidel přímo v Admin Panelu (záložka Fleet).' },
+      { type: 'new', text: 'Dynamický seznam response aut — žádné hardcoded Comet/Vigero/atd., vše se čte z DB.' },
+      { type: 'new', text: 'Non-locator vozidla — checkbox v editoru, amber N/L badge na kartě, samostatný response výběr bez tieru.' },
+      { type: 'new', text: 'Admin Panel se záložkami: Officeři, Aktivita, Fleet.' },
+      { type: 'new', text: 'Audit log se všemi změnami v DB (vozidla, officeři, fleet).' },
+      { type: 'new', text: 'Realtime sync přes Supabase — změny vidí všichni okamžitě.' },
+      { type: 'new', text: 'Login gate + officer auth — databáze viditelná jen autorizovaným.' },
+    ],
+  },
+];
+
+const CHANGE_TYPE_META = {
+  new:      { label: 'NEW',      color: '#22c55e' },
+  fix:      { label: 'FIX',      color: '#3b82f6' },
+  change:   { label: 'ZMĚNA',    color: '#a855f7' },
+  perf:     { label: 'PERF',     color: '#f97316' },
+  security: { label: 'SECURITY', color: '#ef4444' },
+};
+
+function ChangelogModal({ open, onClose }) {
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="relative w-full max-w-2xl max-h-[88vh] overflow-y-auto clip-corners glass-strong rounded-lg border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <Icons.Activity size={18} className="text-sasp-glow" />
+            <div>
+              <h2 className="font-display font-bold text-lg tracking-wider text-sasp-ice">Changelog</h2>
+              <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/60">
+                Historie změn · aktuální verze v{APP_VERSION}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose}
+                  className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition">
+            <Icons.Close size={16} />
+          </button>
+        </div>
+
+        <div className="p-6 md:p-8 space-y-8">
+          {CHANGELOG.map((release, ri) => (
+            <section key={release.version} className="relative">
+              <div className="flex items-baseline gap-3 mb-4">
+                <h3 className="font-display font-bold text-2xl tracking-wider text-sasp-glow text-glow-sm">
+                  v{release.version}
+                </h3>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/50">
+                  {release.date}
+                </span>
+                {ri === 0 && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-emerald-500/20 border border-emerald-400/40 text-emerald-300">
+                    Aktuální
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-2 pl-2 border-l-2 border-sasp-glow/20">
+                {release.changes.map((c, ci) => {
+                  const meta = CHANGE_TYPE_META[c.type] || { label: c.type.toUpperCase(), color: '#94a3b8' };
+                  return (
+                    <li key={ci} className="flex items-start gap-3 pl-3">
+                      <span className="inline-flex items-center justify-center px-1.5 h-5 rounded font-mono text-[9px] font-bold tracking-widest shrink-0 mt-0.5"
+                            style={{
+                              background: `${meta.color}20`,
+                              color: meta.color,
+                              border: `1px solid ${meta.color}50`,
+                            }}>
+                        {meta.label}
+                      </span>
+                      <span className="text-sm text-sasp-ice/85 leading-relaxed">{c.text}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+
+          <div className="pt-4 border-t border-sasp-glow/10 text-center">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/40">
+              Pro nahlášení chyby kontaktuj admina.
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ============================================================
 // CONFIRM DIALOG
 // ============================================================
 function ConfirmDialog({ open, title, message, confirmText = 'Potvrdit', danger, onConfirm, onCancel }) {
@@ -2501,7 +2655,8 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [pinned, setPinned] = useState(() => loadSet(STORAGE_KEY_PINNED));
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-  const [cmdOpen, setCmdOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);  // legacy, unused
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorVehicle, setEditorVehicle] = useState(null);  // null = add, obj = edit
@@ -2559,18 +2714,6 @@ function App() {
       .subscribe();
 
     return () => { cancelled = true; supabase.removeChannel(channel); };
-  }, []);
-
-  // ⌘K shortcut
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setCmdOpen(true);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
   }, []);
 
   const togglePin = useCallback((id) => {
@@ -2749,7 +2892,7 @@ function App() {
   return (
     <div className="relative min-h-screen">
       <Header
-        onCommand={() => setCmdOpen(true)}
+        onChangelog={() => setChangelogOpen(true)}
         auth={auth}
         onLogin={() => setLoginOpen(true)}
         onLogout={handleLogout}
@@ -2893,8 +3036,6 @@ function App() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/40">
             <span>SASP TEU · v{APP_VERSION} · {connected ? 'Online' : 'Offline'}</span>
             <span className="flex items-center gap-3">
-              <span>Ctrl+K Hledání</span>
-              <span className="text-sasp-glow/20">·</span>
               <span>ESC Zavřít</span>
             </span>
           </div>
@@ -2913,6 +3054,10 @@ function App() {
 
       <AnimatePresence>
         {loginOpen && <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {changelogOpen && <ChangelogModal open={changelogOpen} onClose={() => setChangelogOpen(false)} />}
       </AnimatePresence>
 
       <AnimatePresence>
