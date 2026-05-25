@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>SASP · TEU · Databáze lokátorů</title>
 <meta name="description" content="San Andreas State Police — Traffic Enforcement Unit. Interní databáze suspect vozidel s realtime sync přes Supabase." />
+<!-- Cache control: always check for new version (build v0.4) -->
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="pragma" content="no-cache" />
+<meta http-equiv="expires" content="0" />
+<meta name="build-version" content="0.4" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23050912'/%3E%3Cpath d='M50 12 L82 24 V52 C82 70 67 84 50 90 C33 84 18 70 18 52 V24 Z' fill='none' stroke='%2360a5fa' stroke-width='4'/%3E%3Ctext x='50' y='60' font-family='monospace' font-size='28' font-weight='bold' text-anchor='middle' fill='%2360a5fa'%3ETEU%3C/text%3E%3C/svg%3E" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -254,6 +259,7 @@ const TIER_META = {
 // Legacy fallback list — dynamic fleet from `response_vehicles` table is used at runtime.
 const ALL_RESPONSE_CARS = ['Comet', 'Dominator', 'Vigero', 'Gauntlet', 'STX'];
 
+const APP_VERSION = '0.4';
 const STORAGE_KEY_PINNED = 'teu_pinned_v1';
 
 function loadSet(key) {
@@ -476,7 +482,7 @@ function Header({ onCommand, auth, onLogin, onLogout, onAddVehicle, onAdminPanel
       <div className="border-t border-sasp-glow/10 bg-sasp-carbon/60 overflow-hidden">
         <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-1.5 flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.25em] text-sasp-glow/60">
           <span className={connected ? "text-emerald-400" : "text-zinc-500"}>● {connected ? 'LIVE' : 'STATIC'}</span>
-          <span className="hidden sm:inline">Databáze lokátorů v 0.2</span>
+          <span className="hidden sm:inline">Databáze lokátorů v{APP_VERSION}</span>
           <span className="text-sasp-glow/30">/</span>
           <span className="hidden sm:inline">{connected ? 'Synchronizace: realtime' : 'Připojení odpojeno'}</span>
           <span className="text-sasp-glow/30 hidden md:inline">/</span>
@@ -576,11 +582,9 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
 
   return (
     <motion.div
-      layout
-      initial={{ opacity: 0, y: 24 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.35, delay: Math.min(index, 12) * 0.02, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
       whileHover={{ y: -4 }}
       className="group relative text-left clip-corners glass glow-hover rounded-lg overflow-hidden cursor-pointer w-full flex flex-col"
       style={{ borderColor: isNonLocator ? 'rgba(245,158,11,0.35)' : 'rgba(96,165,250,0.15)' }}
@@ -2871,25 +2875,23 @@ function App() {
             )}
           </div>
         ) : (
-          <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
-            <AnimatePresence mode="sync" initial={false}>
-              {filtered.map((v, i) => (
-                <VehicleCard
-                  key={v.id} v={v} index={i}
-                  pinned={pinned.has(v.id)} onTogglePin={() => togglePin(v.id)}
-                  onSelect={() => setSelected(v)}
-                  isOfficer={isOfficer}
-                  onEdit={(veh) => { setEditorVehicle(veh); setEditorOpen(true); }}
-                  onDelete={(veh) => setConfirmDelete(veh)}
-                />
-              ))}
-            </AnimatePresence>
-          </motion.div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
+            {filtered.map((v, i) => (
+              <VehicleCard
+                key={v.id} v={v} index={i}
+                pinned={pinned.has(v.id)} onTogglePin={() => togglePin(v.id)}
+                onSelect={() => setSelected(v)}
+                isOfficer={isOfficer}
+                onEdit={(veh) => { setEditorVehicle(veh); setEditorOpen(true); }}
+                onDelete={(veh) => setConfirmDelete(veh)}
+              />
+            ))}
+          </div>
         )}
 
         <footer className="mt-20 pt-8 border-t border-sasp-glow/10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/40">
-            <span>SASP TEU · v2.0 Supabase · {connected ? 'Online' : 'Offline'}</span>
+            <span>SASP TEU · v{APP_VERSION} · {connected ? 'Online' : 'Offline'}</span>
             <span className="flex items-center gap-3">
               <span>Ctrl+K Hledání</span>
               <span className="text-sasp-glow/20">·</span>
