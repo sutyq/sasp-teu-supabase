@@ -2714,7 +2714,7 @@ function App() {
       .subscribe();
 
     return () => { cancelled = true; supabase.removeChannel(channel); };
-  }, []);
+  }, [auth.loading, isOfficer]);
 
   const togglePin = useCallback((id) => {
     setPinned(prev => {
