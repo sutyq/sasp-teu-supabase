@@ -270,7 +270,7 @@ const RANK_META = {
   'Member': { color: '#94a3b8', bg: 'bg-slate-500/15',  border: 'border-slate-400/30',  text: 'text-slate-300' },
 };
 
-const APP_VERSION = '0.5';
+const APP_VERSION = '0.6';
 const STORAGE_KEY_PINNED = 'teu_pinned_v1';
 
 function loadSet(key) {
@@ -2534,6 +2534,13 @@ function FleetEditor({ open, item, existingNames, onClose, onSaved }) {
 // CHANGELOG
 // ============================================================
 const CHANGELOG = [
+  {
+    version: '0.6',
+    date: '30. 7. 2026',
+    changes: [
+      { type: 'new', text: 'Přidán seznam členů - tlačítko roster - klikni vpravo nahoře pro seznam členů, jejich volačku a rank v rámci divize.' },
+    ],
+  },
   {
     version: '0.5',
     date: '25. 5. 2026',
