@@ -259,6 +259,15 @@ const TIER_META = {
 // Legacy fallback list — dynamic fleet from `response_vehicles` table is used at runtime.
 const ALL_RESPONSE_CARS = ['Comet', 'Dominator', 'Vigero', 'Gauntlet', 'STX'];
 
+const RANKS = ['Member', 'Senior', 'CO', 'XO'];
+const RANK_ORDER = { 'XO': 0, 'CO': 1, 'Senior': 2, 'Member': 3 };
+const RANK_META = {
+  'XO':     { color: '#ef4444', bg: 'bg-red-500/20',    border: 'border-red-400/40',    text: 'text-red-300' },
+  'CO':     { color: '#f59e0b', bg: 'bg-amber-500/20',  border: 'border-amber-400/40',  text: 'text-amber-300' },
+  'Senior': { color: '#38bdf8', bg: 'bg-sasp-glow/20',  border: 'border-sasp-glow/40',  text: 'text-sasp-glow' },
+  'Member': { color: '#94a3b8', bg: 'bg-slate-500/15',  border: 'border-slate-400/30',  text: 'text-slate-300' },
+};
+
 const APP_VERSION = '0.5';
 const STORAGE_KEY_PINNED = 'teu_pinned_v1';
 
@@ -404,7 +413,7 @@ function ConnectionStatus({ connected, syncing }) {
   );
 }
 
-function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, connected, syncing }) {
+function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, onRoster, connected, syncing }) {
   const { officer, session } = auth;
   const isOfficer = !!officer;
 
@@ -454,6 +463,12 @@ function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPan
                     className="p-2 glass rounded-md text-sasp-glow/60 hover:text-red-400 hover:border-red-400/40 transition border border-sasp-glow/15"
                     title="Odhlásit se">
               <Icons.LogOut size={14} />
+            </button>
+            <button onClick={onRoster}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border
+                               bg-sasp-glow/10 border-sasp-glow/30 text-sasp-glow hover:bg-sasp-glow/20 hover:border-sasp-glow/60">
+              <Icons.Shield size={14} />
+              <span className="hidden sm:inline">Roster</span>
             </button>
             {officer.is_admin && (
               <button onClick={onAdminPanel}
@@ -1445,6 +1460,7 @@ const FIELD_LABELS = {
   display_name: 'Jméno',
   email: 'E-mail',
   is_admin: 'Admin práva',
+  rank: 'Hodnost',
   active: 'Aktivní',
   sort_order: 'Pořadí',
 };
@@ -1560,6 +1576,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newIsAdmin, setNewIsAdmin] = useState(false);
+  const [newRank, setNewRank] = useState('Member');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmRemove, setConfirmRemove] = useState(null);
@@ -1625,9 +1642,10 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
         email: newEmail.trim().toLowerCase(),
         display_name: newName.trim() || null,
         is_admin: newIsAdmin,
+        rank: newRank,
       });
       if (error) throw error;
-      setNewEmail(''); setNewName(''); setNewIsAdmin(false);
+      setNewEmail(''); setNewName(''); setNewIsAdmin(false); setNewRank('Member');
       await loadOfficers();
     } catch (e) {
       setError(e.message);
@@ -1655,6 +1673,22 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     try {
       const { error } = await supabase.from('officers')
         .update({ is_admin: !officer.is_admin })
+        .eq('id', officer.id);
+      if (error) throw error;
+      await loadOfficers();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateRank(officer, rank) {
+    if (rank === officer.rank) return;
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('officers')
+        .update({ rank })
         .eq('id', officer.id);
       if (error) throw error;
       await loadOfficers();
@@ -1785,6 +1819,12 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                              placeholder="např. Petr" />
                     </div>
                   </div>
+                  <div>
+                    <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Hodnost</label>
+                    <select value={newRank} onChange={(e) => setNewRank(e.target.value)}>
+                      {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
                   <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
                     <input type="checkbox" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)}
                            className="!w-auto accent-sasp-glow" />
@@ -1819,11 +1859,20 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || o.email}</span>
+                              {(() => { const rm = RANK_META[o.rank] || RANK_META.Member; return (
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold ${rm.bg} border ${rm.border} ${rm.text}`}>{o.rank || 'Member'}</span>
+                              ); })()}
                               {o.is_admin && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-amber-500/20 border border-amber-400/40 text-amber-300">Admin</span>}
                               {isSelf && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-sasp-glow/20 border border-sasp-glow/40 text-sasp-glow">Ty</span>}
                             </div>
                             <div className="font-mono text-[10px] text-sasp-glow/50 truncate">{o.email}</div>
                           </div>
+                          <select value={o.rank || 'Member'} disabled={busy}
+                                  onChange={(e) => updateRank(o, e.target.value)}
+                                  title="Změnit hodnost"
+                                  className="!w-auto text-[10px] py-1.5">
+                            {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
                           <button onClick={() => toggleAdmin(o)} disabled={busy || isSelf}
                                   title={o.is_admin ? 'Odebrat admin práva' : 'Udělit admin práva'}
                                   className={`p-2 rounded-md border transition disabled:opacity-30 disabled:cursor-not-allowed
@@ -2571,8 +2620,104 @@ function ChangelogModal({ open, onClose }) {
 }
 
 // ============================================================
-// CONFIRM DIALOG
+// ROSTER (public, read-only — editing stays in AdminPanel)
 // ============================================================
+function RosterModal({ open, onClose }) {
+  const [officers, setOfficers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+
+    setLoading(true);
+    supabase.from('officers').select('email, display_name, rank, is_admin')
+      .then(({ data, error }) => {
+        if (error) setError(error.message);
+        else setOfficers(data || []);
+        setLoading(false);
+      });
+
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const sorted = [...officers].sort((a, b) => {
+    const ra = RANK_ORDER[a.rank] ?? 99;
+    const rb = RANK_ORDER[b.rank] ?? 99;
+    if (ra !== rb) return ra - rb;
+    return (a.display_name || a.email).localeCompare(b.display_name || b.email);
+  });
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="relative w-full max-w-xl max-h-[88vh] overflow-y-auto clip-corners glass-strong rounded-lg border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <Icons.Shield size={18} className="text-sasp-glow" />
+            <div>
+              <h2 className="font-display font-bold text-lg tracking-wider text-sasp-ice">Roster</h2>
+              <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/60">
+                Seznam officerů · {officers.length}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose}
+                  className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition">
+            <Icons.Close size={16} />
+          </button>
+        </div>
+
+        <div className="p-4 md:p-6">
+          {loading ? (
+            <div className="py-8 text-center"><Icons.Loader size={24} className="mx-auto text-sasp-glow/60" /></div>
+          ) : error ? (
+            <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-red-400">{error}</div>
+          ) : sorted.length === 0 ? (
+            <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-sasp-glow/50">Žádní officeři</div>
+          ) : (
+            <div className="space-y-2">
+              {sorted.map(o => {
+                const rm = RANK_META[o.rank] || RANK_META.Member;
+                return (
+                  <div key={o.email} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-md bg-sasp-glow/10 border border-sasp-glow/30">
+                      <Icons.Shield size={18} className={o.is_admin ? "text-amber-400" : "text-sasp-glow/70"} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || o.email}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold ${rm.bg} border ${rm.border} ${rm.text}`}>{o.rank || 'Member'}</span>
+                        {o.is_admin && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-amber-500/20 border border-amber-400/40 text-amber-300">Admin</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+
 function ConfirmDialog({ open, title, message, confirmText = 'Potvrdit', danger, onConfirm, onCancel }) {
   if (!open) return null;
   return (
@@ -2661,6 +2806,7 @@ function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorVehicle, setEditorVehicle] = useState(null);  // null = add, obj = edit
   const [adminOpen, setAdminOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -2898,6 +3044,7 @@ function App() {
         onLogout={handleLogout}
         onAddVehicle={() => { setEditorVehicle(null); setEditorOpen(true); }}
         onAdminPanel={() => setAdminOpen(true)}
+        onRoster={() => setRosterOpen(true)}
         connected={connected}
         syncing={syncing}
       />
@@ -3058,6 +3205,10 @@ function App() {
 
       <AnimatePresence>
         {changelogOpen && <ChangelogModal open={changelogOpen} onClose={() => setChangelogOpen(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {rosterOpen && <RosterModal open={rosterOpen} onClose={() => setRosterOpen(false)} />}
       </AnimatePresence>
 
       <AnimatePresence>
