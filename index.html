@@ -244,6 +244,8 @@ const Icons = {
   Loader: (p) => <Icon {...p} d="M21 12a9 9 0 1 1-6.219-8.56" className={(p.className||'') + ' animate-spin'} />,
   Cloud: (p) => <Icon {...p} d="M17.5 19a4.5 4.5 0 1 0-3-7.95 6 6 0 1 0-11 3h13.5" />,
   CloudOff: (p) => <Icon {...p} d={["M2 2l20 20", "M5.78 5.78A6 6 0 0 0 8 17h12.74", "M17.5 19a4.5 4.5 0 0 0-2-8.5"]} />,
+  Eye: (p) => <Icon {...p} d={["M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z", "M9 12a3 3 0 1 0 6 0 3 3 0 1 0-6 0"]} />,
+  EyeOff: (p) => <Icon {...p} d={["M9.9 5.2A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2.6 3.5", "M6.2 6.6A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5-1.4", "M9.5 9.6a3 3 0 0 0 4.2 4.2", "m2 2 20 20"]} />,
 };
 
 // ============================================================
@@ -1461,6 +1463,8 @@ const FIELD_LABELS = {
   email: 'E-mail',
   is_admin: 'Admin práva',
   rank: 'Hodnost',
+  callsign: 'Volací znak',
+  visible_in_roster: 'Viditelný v rosteru',
   active: 'Aktivní',
   sort_order: 'Pořadí',
 };
@@ -1577,6 +1581,8 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
   const [newName, setNewName] = useState('');
   const [newIsAdmin, setNewIsAdmin] = useState(false);
   const [newRank, setNewRank] = useState('Member');
+  const [newCallsign, setNewCallsign] = useState('');
+  const [newVisible, setNewVisible] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmRemove, setConfirmRemove] = useState(null);
@@ -1643,9 +1649,11 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
         display_name: newName.trim() || null,
         is_admin: newIsAdmin,
         rank: newRank,
+        callsign: newCallsign.trim() || null,
+        visible_in_roster: newVisible,
       });
       if (error) throw error;
-      setNewEmail(''); setNewName(''); setNewIsAdmin(false); setNewRank('Member');
+      setNewEmail(''); setNewName(''); setNewIsAdmin(false); setNewRank('Member'); setNewCallsign(''); setNewVisible(true);
       await loadOfficers();
     } catch (e) {
       setError(e.message);
@@ -1689,6 +1697,38 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     try {
       const { error } = await supabase.from('officers')
         .update({ rank })
+        .eq('id', officer.id);
+      if (error) throw error;
+      await loadOfficers();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateCallsign(officer, callsign) {
+    const clean = callsign.trim() || null;
+    if (clean === (officer.callsign || null)) return;
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('officers')
+        .update({ callsign: clean })
+        .eq('id', officer.id);
+      if (error) throw error;
+      await loadOfficers();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleRosterVisibility(officer) {
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('officers')
+        .update({ visible_in_roster: !officer.visible_in_roster })
         .eq('id', officer.id);
       if (error) throw error;
       await loadOfficers();
@@ -1819,12 +1859,24 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                              placeholder="např. Petr" />
                     </div>
                   </div>
-                  <div>
-                    <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Hodnost</label>
-                    <select value={newRank} onChange={(e) => setNewRank(e.target.value)}>
-                      {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Hodnost</label>
+                      <select value={newRank} onChange={(e) => setNewRank(e.target.value)}>
+                        {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Volací znak (volitelné)</label>
+                      <input type="text" value={newCallsign} onChange={(e) => setNewCallsign(e.target.value)}
+                             placeholder="např. 1-A-12" />
+                    </div>
                   </div>
+                  <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
+                    <input type="checkbox" checked={newVisible} onChange={(e) => setNewVisible(e.target.checked)}
+                           className="!w-auto accent-sasp-glow" />
+                    <span>Viditelný v rosteru</span>
+                  </label>
                   <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
                     <input type="checkbox" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)}
                            className="!w-auto accent-sasp-glow" />
@@ -1852,27 +1904,40 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                     {officers.map(o => {
                       const isSelf = o.email === currentUserEmail;
                       return (
-                        <div key={o.id} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15">
+                        <div key={o.id} className={`flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15 ${o.visible_in_roster === false ? 'opacity-60' : ''}`}>
                           <div className="flex items-center justify-center w-10 h-10 rounded-md bg-sasp-glow/10 border border-sasp-glow/30">
                             <Icons.Shield size={18} className={o.is_admin ? "text-amber-400" : "text-sasp-glow/70"} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || o.email}</span>
+                              {o.callsign && <span className="px-1.5 py-0.5 rounded text-[9px] font-mono tracking-widest bg-sasp-glow/10 border border-sasp-glow/25 text-sasp-glow/80">{o.callsign}</span>}
                               {(() => { const rm = RANK_META[o.rank] || RANK_META.Member; return (
                                 <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold ${rm.bg} border ${rm.border} ${rm.text}`}>{o.rank || 'Member'}</span>
                               ); })()}
                               {o.is_admin && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-amber-500/20 border border-amber-400/40 text-amber-300">Admin</span>}
+                              {o.visible_in_roster === false && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-slate-500/20 border border-slate-400/30 text-slate-400">Skrytý v rosteru</span>}
                               {isSelf && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-sasp-glow/20 border border-sasp-glow/40 text-sasp-glow">Ty</span>}
                             </div>
                             <div className="font-mono text-[10px] text-sasp-glow/50 truncate">{o.email}</div>
                           </div>
+                          <input type="text" defaultValue={o.callsign || ''} disabled={busy}
+                                 onBlur={(e) => updateCallsign(o, e.target.value)}
+                                 placeholder="Volací znak"
+                                 title="Volací znak"
+                                 className="!w-24 text-[10px] py-1.5" />
                           <select value={o.rank || 'Member'} disabled={busy}
                                   onChange={(e) => updateRank(o, e.target.value)}
                                   title="Změnit hodnost"
                                   className="!w-auto text-[10px] py-1.5">
                             {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
                           </select>
+                          <button onClick={() => toggleRosterVisibility(o)} disabled={busy}
+                                  title={o.visible_in_roster === false ? 'Zobrazit v rosteru' : 'Skrýt z rosteru'}
+                                  className={`p-2 rounded-md border transition disabled:opacity-30 disabled:cursor-not-allowed
+                                              ${o.visible_in_roster === false ? 'border-slate-400/30 text-slate-400 hover:bg-slate-500/10' : 'border-sasp-glow/20 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/50'}`}>
+                            {o.visible_in_roster === false ? <Icons.EyeOff size={14} /> : <Icons.Eye size={14} />}
+                          </button>
                           <button onClick={() => toggleAdmin(o)} disabled={busy || isSelf}
                                   title={o.is_admin ? 'Odebrat admin práva' : 'Udělit admin práva'}
                                   className={`p-2 rounded-md border transition disabled:opacity-30 disabled:cursor-not-allowed
@@ -2634,7 +2699,8 @@ function RosterModal({ open, onClose }) {
     document.addEventListener('keydown', onKey);
 
     setLoading(true);
-    supabase.from('officers').select('email, display_name, rank, is_admin')
+    supabase.from('officers').select('email, display_name, rank, callsign')
+      .eq('visible_in_roster', true)
       .then(({ data, error }) => {
         if (error) setError(error.message);
         else setOfficers(data || []);
@@ -2697,13 +2763,13 @@ function RosterModal({ open, onClose }) {
                 return (
                   <div key={o.email} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15">
                     <div className="flex items-center justify-center w-10 h-10 rounded-md bg-sasp-glow/10 border border-sasp-glow/30">
-                      <Icons.Shield size={18} className={o.is_admin ? "text-amber-400" : "text-sasp-glow/70"} />
+                      <Icons.Shield size={18} className="text-sasp-glow/70" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || o.email}</span>
+                        {o.callsign && <span className="px-1.5 py-0.5 rounded text-[9px] font-mono tracking-widest bg-sasp-glow/10 border border-sasp-glow/25 text-sasp-glow/80">{o.callsign}</span>}
                         <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold ${rm.bg} border ${rm.border} ${rm.text}`}>{o.rank || 'Member'}</span>
-                        {o.is_admin && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-amber-500/20 border border-amber-400/40 text-amber-300">Admin</span>}
                       </div>
                     </div>
                   </div>
