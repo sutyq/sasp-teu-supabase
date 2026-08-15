@@ -1590,6 +1590,10 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
   const [activityLog, setActivityLog] = useState([]);
   const [logLoading, setLogLoading] = useState(false);
   const [logFilter, setLogFilter] = useState({ type: null, action: null });
+  const [logTotal, setLogTotal] = useState(0);
+  const [logHasMore, setLogHasMore] = useState(false);
+  const [logLoadingMore, setLogLoadingMore] = useState(false);
+  const LOG_PAGE_SIZE = 200;
   const [expandedLogs, setExpandedLogs] = useState(new Set());
 
   async function loadOfficers() {
@@ -1605,14 +1609,33 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
 
   async function loadActivity() {
     setLogLoading(true);
+    const { data, error, count } = await supabase
+      .from('activity_log')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(0, LOG_PAGE_SIZE - 1);
+    if (error) setError(error.message);
+    else {
+      setActivityLog(data || []);
+      setLogTotal(count ?? (data || []).length);
+      setLogHasMore((count ?? 0) > (data || []).length);
+    }
+    setLogLoading(false);
+  }
+
+  async function loadMoreActivity() {
+    setLogLoadingMore(true);
     const { data, error } = await supabase
       .from('activity_log')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .range(activityLog.length, activityLog.length + LOG_PAGE_SIZE - 1);
     if (error) setError(error.message);
-    else setActivityLog(data || []);
-    setLogLoading(false);
+    else {
+      setActivityLog(prev => [...prev, ...(data || [])]);
+      setLogHasMore(activityLog.length + (data || []).length < logTotal);
+    }
+    setLogLoadingMore(false);
   }
 
   useEffect(() => {
@@ -1626,7 +1649,10 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     // Realtime subscription pro activity log
     const channel = supabase.channel('activity-log-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' },
-          (payload) => setActivityLog(prev => [payload.new, ...prev].slice(0, 200)))
+          (payload) => {
+            setActivityLog(prev => [payload.new, ...prev]);
+            setLogTotal(prev => prev + 1);
+          })
       .subscribe();
 
     return () => {
@@ -1832,8 +1858,8 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                                     : 'text-sasp-glow/50 border-transparent hover:text-sasp-glow/80'}`}>
                 {t.icon}
                 <span>{t.label}</span>
-                {t.id === 'activity' && activityLog.length > 0 && (
-                  <span className="px-1.5 rounded-full bg-sasp-glow/20 text-[9px]">{activityLog.length}</span>
+                {t.id === 'activity' && logTotal > 0 && (
+                  <span className="px-1.5 rounded-full bg-sasp-glow/20 text-[9px]">{logTotal}</span>
                 )}
               </button>
             ))}
@@ -1962,7 +1988,10 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
           {tab === 'activity' && (
             <div>
               <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
-                <SectionTitle icon={<Icons.Activity size={14} />} text={`Aktivita (${filteredLog.length})`} />
+                <SectionTitle icon={<Icons.Activity size={14} />}
+                              text={logFilter.type || logFilter.action
+                                ? `Aktivita (${filteredLog.length} nalezeno)`
+                                : `Aktivita (${activityLog.length} z ${logTotal})`} />
               </div>
 
               {/* Filters */}
@@ -2053,6 +2082,15 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {!logLoading && !logFilter.type && !logFilter.action && logHasMore && (
+                <div className="pt-3 text-center">
+                  <button onClick={loadMoreActivity} disabled={logLoadingMore}
+                          className="px-4 py-2 rounded-md font-mono text-[10px] uppercase tracking-widest border border-sasp-glow/25 text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition disabled:opacity-50">
+                    {logLoadingMore ? 'Načítám…' : `Načíst starší (${logTotal - activityLog.length} zbývá)`}
+                  </button>
                 </div>
               )}
             </div>
