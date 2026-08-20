@@ -258,6 +258,13 @@ const TIER_META = {
   'A+': { color: '#a855f7', bgStrong: 'rgba(168,85,247,0.18)', bgSoft: 'rgba(168,85,247,0.05)', label: 'ZVÝŠENÝ',    bgFrom: 'from-purple-500/15', bgTo: 'to-purple-900/5' },
   'A':  { color: '#3b82f6', bgStrong: 'rgba(59,130,246,0.18)', bgSoft: 'rgba(59,130,246,0.05)', label: 'STANDARD',   bgFrom: 'from-blue-500/15',   bgTo: 'to-blue-900/5' },
 };
+
+const ACTION_META = {
+  create: { color: '#22c55e', label: 'Vytvořeno', icon: <Icons.Plus size={12} /> },
+  update: { color: '#3b82f6', label: 'Upraveno', icon: <Icons.Edit size={12} /> },
+  delete: { color: '#ef4444', label: 'Smazáno', icon: <Icons.Trash size={12} /> },
+};
+
 // Legacy fallback list — dynamic fleet from `response_vehicles` table is used at runtime.
 const ALL_RESPONSE_CARS = ['Comet', 'Dominator', 'Vigero', 'Gauntlet', 'STX'];
 
@@ -287,6 +294,21 @@ function slugify(s) {
     .replace(/[^a-z0-9\-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+}
+
+function formatTimeAgo(iso) {
+  const now = new Date();
+  const then = new Date(iso);
+  const diffMs = now - then;
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return `před ${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `před ${min} min`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `před ${hr} h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `před ${day} d`;
+  return then.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 // ============================================================
@@ -584,9 +606,28 @@ function VehicleImage({ src, alt, className = '' }) {
   );
 }
 
-function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdit, onDelete }) {
+function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdmin, onEdit, onDelete }) {
   const isNonLocator = !!v.non_locator;
   const tierMeta = TIER_META[v.tier] || TIER_META['A'];
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState(null);
+
+  async function toggleHistory(e) {
+    e.stopPropagation();
+    if (!historyOpen && historyEntries === null) {
+      setHistoryLoading(true);
+      const { data } = await supabase.from('activity_log')
+        .select('id, action, actor_email, created_at')
+        .eq('entity_type', 'vehicle')
+        .eq('entity_id', v.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      setHistoryEntries(data || []);
+      setHistoryLoading(false);
+    }
+    setHistoryOpen(o => !o);
+  }
 
   // Non-locator styling: amber theme instead of tier colors
   const accentColor = isNonLocator ? '#f59e0b' : tierMeta.color;
@@ -612,6 +653,13 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
 
       {/* Top-right actions */}
       <div className="absolute top-2 right-2 z-10 flex gap-1">
+        {isAdmin && (
+          <button onClick={toggleHistory}
+                  className={`p-1.5 rounded-md glass border transition ${historyOpen ? 'border-sasp-glow/50 text-sasp-glow' : 'border-sasp-glow/15 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40'}`}
+                  title="Poslední změny">
+            <Icons.Activity size={14} />
+          </button>
+        )}
         {isOfficer && (
           <>
             <button onClick={(e) => { e.stopPropagation(); onEdit(v); }}
@@ -706,6 +754,36 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, onEdi
           <p className="text-[11px] text-sasp-ice/55 italic clamp-2 leading-relaxed border-l-2 border-sasp-glow/25 pl-2">
             {v.notes}
           </p>
+        )}
+
+        {historyOpen && (
+          <div onClick={(e) => e.stopPropagation()}
+               className="rounded-md border border-sasp-glow/15 bg-sasp-carbon/40 p-2.5 space-y-1.5">
+            <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-sasp-glow/50 mb-1">
+              Poslední změny
+            </div>
+            {historyLoading ? (
+              <div className="py-2 text-center"><Icons.Loader size={16} className="mx-auto text-sasp-glow/50" /></div>
+            ) : !historyEntries || historyEntries.length === 0 ? (
+              <div className="text-[10px] font-mono text-sasp-glow/40 italic">Žádné záznamy</div>
+            ) : (
+              historyEntries.map(h => {
+                const am = ACTION_META[h.action] || { color: '#94a3b8', label: h.action };
+                return (
+                  <div key={h.id} className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                    <span className="flex items-center gap-1.5 truncate">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: am.color }} />
+                      <span style={{ color: am.color }}>{am.label}</span>
+                      <span className="text-sasp-glow/40 truncate" title={h.actor_email}>
+                        {(h.actor_email || '').split('@')[0]}
+                      </span>
+                    </span>
+                    <span className="text-sasp-glow/35 shrink-0">{formatTimeAgo(h.created_at)}</span>
+                  </div>
+                );
+              })
+            )}
+          </div>
         )}
 
         <div className="flex items-center justify-between pt-2 mt-1 border-t border-sasp-glow/10">
@@ -1772,21 +1850,6 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     return true;
   });
 
-  function formatTimeAgo(iso) {
-    const now = new Date();
-    const then = new Date(iso);
-    const diffMs = now - then;
-    const sec = Math.floor(diffMs / 1000);
-    if (sec < 60) return `před ${sec}s`;
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `před ${min} min`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `před ${hr} h`;
-    const day = Math.floor(hr / 24);
-    if (day < 7) return `před ${day} d`;
-    return then.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  }
-
   // Lookup map: email → display_name (for prettier activity log entries)
   const officerNameMap = useMemo(() => {
     const m = {};
@@ -1810,12 +1873,6 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
       return next;
     });
   }
-
-    const ACTION_META = {
-    create: { color: '#22c55e', label: 'Vytvořeno', icon: <Icons.Plus size={12} /> },
-    update: { color: '#3b82f6', label: 'Upraveno', icon: <Icons.Edit size={12} /> },
-    delete: { color: '#ef4444', label: 'Smazáno', icon: <Icons.Trash size={12} /> },
-  };
 
   const ENTITY_META = {
     vehicle: { label: 'Vozidlo', icon: <Icons.Car size={12} /> },
@@ -2897,6 +2954,7 @@ function SetupHint() {
 function App() {
   const auth = useAuth();
   const isOfficer = !!auth.officer;
+  const isAdmin = !!auth.officer?.is_admin;
 
   const { fleet: responseFleet, activeNames: activeResponseNames } = useResponseVehicles();
 
@@ -3283,6 +3341,7 @@ function App() {
                 pinned={pinned.has(v.id)} onTogglePin={() => togglePin(v.id)}
                 onSelect={() => setSelected(v)}
                 isOfficer={isOfficer}
+                isAdmin={isAdmin}
                 onEdit={(veh) => { setEditorVehicle(veh); setEditorOpen(true); }}
                 onDelete={(veh) => setConfirmDelete(veh)}
               />
