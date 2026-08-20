@@ -606,28 +606,9 @@ function VehicleImage({ src, alt, className = '' }) {
   );
 }
 
-function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdmin, onEdit, onDelete }) {
+function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdmin, onEdit, onDelete, onHistory }) {
   const isNonLocator = !!v.non_locator;
   const tierMeta = TIER_META[v.tier] || TIER_META['A'];
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyEntries, setHistoryEntries] = useState(null);
-
-  async function toggleHistory(e) {
-    e.stopPropagation();
-    if (!historyOpen && historyEntries === null) {
-      setHistoryLoading(true);
-      const { data } = await supabase.from('activity_log')
-        .select('id, action, actor_email, created_at')
-        .eq('entity_type', 'vehicle')
-        .eq('entity_id', v.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-      setHistoryEntries(data || []);
-      setHistoryLoading(false);
-    }
-    setHistoryOpen(o => !o);
-  }
 
   // Non-locator styling: amber theme instead of tier colors
   const accentColor = isNonLocator ? '#f59e0b' : tierMeta.color;
@@ -654,8 +635,8 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
       {/* Top-right actions */}
       <div className="absolute top-2 right-2 z-10 flex gap-1">
         {isAdmin && (
-          <button onClick={toggleHistory}
-                  className={`p-1.5 rounded-md glass border transition ${historyOpen ? 'border-sasp-glow/50 text-sasp-glow' : 'border-sasp-glow/15 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40'}`}
+          <button onClick={(e) => { e.stopPropagation(); onHistory(v); }}
+                  className="p-1.5 rounded-md glass border border-sasp-glow/15 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40 transition"
                   title="Poslední změny">
             <Icons.Activity size={14} />
           </button>
@@ -754,36 +735,6 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
           <p className="text-[11px] text-sasp-ice/55 italic clamp-2 leading-relaxed border-l-2 border-sasp-glow/25 pl-2">
             {v.notes}
           </p>
-        )}
-
-        {historyOpen && (
-          <div onClick={(e) => e.stopPropagation()}
-               className="rounded-md border border-sasp-glow/15 bg-sasp-carbon/40 p-2.5 space-y-1.5">
-            <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-sasp-glow/50 mb-1">
-              Poslední změny
-            </div>
-            {historyLoading ? (
-              <div className="py-2 text-center"><Icons.Loader size={16} className="mx-auto text-sasp-glow/50" /></div>
-            ) : !historyEntries || historyEntries.length === 0 ? (
-              <div className="text-[10px] font-mono text-sasp-glow/40 italic">Žádné záznamy</div>
-            ) : (
-              historyEntries.map(h => {
-                const am = ACTION_META[h.action] || { color: '#94a3b8', label: h.action };
-                return (
-                  <div key={h.id} className="flex items-center justify-between gap-2 text-[10px] font-mono">
-                    <span className="flex items-center gap-1.5 truncate">
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: am.color }} />
-                      <span style={{ color: am.color }}>{am.label}</span>
-                      <span className="text-sasp-glow/40 truncate" title={h.actor_email}>
-                        {(h.actor_email || '').split('@')[0]}
-                      </span>
-                    </span>
-                    <span className="text-sasp-glow/35 shrink-0">{formatTimeAgo(h.created_at)}</span>
-                  </div>
-                );
-              })
-            )}
-          </div>
         )}
 
         <div className="flex items-center justify-between pt-2 mt-1 border-t border-sasp-glow/10">
@@ -972,8 +923,130 @@ function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, onEdit, onDe
 }
 
 // ============================================================
-// LOGIN MODAL
+// VEHICLE HISTORY MODAL (admin only — recent changes for one vehicle)
 // ============================================================
+function VehicleHistoryModal({ vehicle, onClose }) {
+  const [entries, setEntries] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!vehicle) return;
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const { data: log, error: logErr } = await supabase.from('activity_log')
+        .select('id, action, actor_email, created_at')
+        .eq('entity_type', 'vehicle')
+        .eq('entity_id', vehicle.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (cancelled) return;
+      if (logErr) { setError(logErr.message); setLoading(false); return; }
+
+      const emails = [...new Set((log || []).map(l => (l.actor_email || '').toLowerCase()).filter(Boolean))];
+      let nameMap = {};
+      if (emails.length > 0) {
+        const { data: officers } = await supabase.from('officers')
+          .select('email, display_name')
+          .in('email', emails);
+        for (const o of (officers || [])) nameMap[o.email.toLowerCase()] = o.display_name;
+      }
+
+      if (!cancelled) {
+        setEntries((log || []).map(l => ({
+          ...l,
+          actorLabel: nameMap[(l.actor_email || '').toLowerCase()] || l.actor_email || 'Neznámý',
+        })));
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [vehicle, onClose]);
+
+  if (!vehicle) return null;
+  const tierMeta = TIER_META[vehicle.tier] || TIER_META['A'];
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-xl max-h-[88vh] overflow-y-auto clip-corners glass-strong rounded-lg shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+        style={{ borderColor: 'rgba(96,165,250,0.3)' }}
+      >
+        <div className="absolute top-0 left-0 right-0 h-[2px]"
+             style={{ background: `linear-gradient(90deg, transparent, ${tierMeta.color}, transparent)` }} />
+
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <Icons.Activity size={18} className="text-sasp-glow" />
+            <div>
+              <h2 className="font-display font-bold text-lg tracking-wider text-sasp-ice">{vehicle.vehicle}</h2>
+              <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/60">Poslední změny</div>
+            </div>
+          </div>
+          <button onClick={onClose}
+                  className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition">
+            <Icons.Close size={16} />
+          </button>
+        </div>
+
+        <div className="p-4 md:p-6">
+          {loading ? (
+            <div className="py-8 text-center"><Icons.Loader size={24} className="mx-auto text-sasp-glow/60" /></div>
+          ) : error ? (
+            <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-red-400">{error}</div>
+          ) : !entries || entries.length === 0 ? (
+            <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-sasp-glow/50">Žádné záznamy</div>
+          ) : (
+            <div className="space-y-2">
+              {entries.map(log => {
+                const am = ACTION_META[log.action] || { color: '#94a3b8', label: log.action, icon: null };
+                return (
+                  <div key={log.id} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/10">
+                    <div className="flex items-center justify-center w-9 h-9 rounded-md shrink-0"
+                         style={{ background: `${am.color}20`, border: `1px solid ${am.color}40`, color: am.color }}>
+                      {am.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-display font-bold text-sasp-ice truncate">{log.actorLabel}</span>
+                        <span className="font-mono text-[10px] uppercase tracking-widest" style={{ color: am.color }}>
+                          {am.label.toLowerCase()}
+                        </span>
+                      </div>
+                      <div className="font-mono text-[10px] text-sasp-glow/40 mt-0.5">
+                        {formatTimeAgo(log.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+
 function LoginModal({ open, onClose }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -2976,6 +3049,7 @@ function App() {
   const [editorVehicle, setEditorVehicle] = useState(null);  // null = add, obj = edit
   const [adminOpen, setAdminOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [historyVehicle, setHistoryVehicle] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -3344,6 +3418,7 @@ function App() {
                 isAdmin={isAdmin}
                 onEdit={(veh) => { setEditorVehicle(veh); setEditorOpen(true); }}
                 onDelete={(veh) => setConfirmDelete(veh)}
+                onHistory={(veh) => setHistoryVehicle(veh)}
               />
             ))}
           </div>
@@ -3379,6 +3454,10 @@ function App() {
 
       <AnimatePresence>
         {rosterOpen && <RosterModal open={rosterOpen} onClose={() => setRosterOpen(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {historyVehicle && <VehicleHistoryModal vehicle={historyVehicle} onClose={() => setHistoryVehicle(null)} />}
       </AnimatePresence>
 
       <AnimatePresence>
