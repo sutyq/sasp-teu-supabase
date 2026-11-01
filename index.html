@@ -268,6 +268,21 @@ const ACTION_META = {
 // Legacy fallback list — dynamic fleet from `response_vehicles` table is used at runtime.
 const ALL_RESPONSE_CARS = ['Comet', 'Dominator', 'Vigero', 'Gauntlet', 'STX'];
 
+const RESET_TARGETS = {
+  vehicles: {
+    label: 'Vozidla',
+    desc: 'Smaže všechna vozidla z databáze lokátorů.',
+  },
+  response_vehicles: {
+    label: 'Response fleet',
+    desc: 'Smaže všechna response auta. Případná vozidla, která zůstanou, budou mít v response matici odkazy na neexistující auta.',
+  },
+  activity_log: {
+    label: 'Activity log',
+    desc: 'Vymaže celou historii změn, včetně historie u jednotlivých vozidel.',
+  },
+};
+
 const RANKS = ['Member', 'Senior', 'CO', 'XO'];
 const RANK_ORDER = { 'CO': 0, 'XO': 1, 'Senior': 2, 'Member': 3 };
 const RANK_META = {
@@ -1779,6 +1794,11 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [resetCounts, setResetCounts] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(null);
+  const [resetNote, setResetNote] = useState('');
 
   const [activityLog, setActivityLog] = useState([]);
   const [logLoading, setLogLoading] = useState(false);
@@ -1855,6 +1875,10 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     };
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (open && tab === 'reset') loadResetCounts();
+  }, [open, tab]);
+
   if (!open) return null;
 
   async function addOfficer(e) {
@@ -1892,6 +1916,66 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     } finally {
       setBusy(false);
       setConfirmRemove(null);
+    }
+  }
+
+  // Never selectable: yourself. "Select all" skips admins; they can still be ticked one by one.
+  const nonAdminIds = officers.filter(o => !o.is_admin && o.email !== currentUserEmail).map(o => o.id);
+  const allNonAdminSelected = nonAdminIds.length > 0 && nonAdminIds.every(id => selectedIds.has(id));
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllNonAdmin() {
+    setSelectedIds(allNonAdminSelected ? new Set() : new Set(nonAdminIds));
+  }
+
+  async function removeSelectedOfficers() {
+    const ids = [...selectedIds];
+    setBusy(true); setError('');
+    try {
+      // .select('id') returns the rows that were really deleted, so a silent RLS no-op can't pass as success
+      const { data, error } = await supabase.from('officers').delete().in('id', ids).select('id');
+      if (error) throw error;
+      const deleted = (data || []).length;
+      if (deleted !== ids.length) throw new Error(`Smazáno jen ${deleted} z ${ids.length} vybraných officerů`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      await loadOfficers();
+      setSelectedIds(new Set());
+      setBusy(false);
+      setConfirmBulk(false);
+    }
+  }
+
+  async function loadResetCounts() {
+    const count = async (table) =>
+      (await supabase.from(table).select('*', { count: 'exact', head: true })).count ?? 0;
+    const [vehicles, response_vehicles, activity_log] = await Promise.all([
+      count('vehicles'), count('response_vehicles'), count('activity_log'),
+    ]);
+    setResetCounts({ vehicles, response_vehicles, activity_log });
+  }
+
+  async function runReset(target) {
+    setBusy(true); setError(''); setResetNote('');
+    try {
+      const { data, error } = await supabase.rpc('admin_reset', { target });
+      if (error) throw error;
+      setResetNote(`${RESET_TARGETS[target].label}: smazáno ${data} záznamů`);
+      if (target === 'activity_log') { setActivityLog([]); setLogTotal(0); setLogHasMore(false); }
+      await loadResetCounts();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+      setConfirmReset(null);
     }
   }
 
@@ -2022,6 +2106,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
               { id: 'officers', label: 'Officeři', icon: <Icons.Shield size={12} /> },
               { id: 'fleet', label: 'Fleet', icon: <Icons.Car size={12} /> },
               { id: 'activity', label: 'Aktivita', icon: <Icons.Activity size={12} /> },
+              { id: 'reset', label: 'Reset', icon: <Icons.Trash size={12} /> },
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                       className={`flex items-center gap-2 px-4 py-2 font-mono text-[11px] uppercase tracking-widest transition border-b-2
@@ -2093,6 +2178,23 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
 
               <div>
                 <SectionTitle icon={<Icons.Shield size={14} />} text={`Současní officeři (${officers.length})`} />
+                {!loading && officers.length > 0 && (
+                  <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                    <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
+                      <input type="checkbox" checked={allNonAdminSelected} onChange={toggleAllNonAdmin}
+                             disabled={busy || nonAdminIds.length === 0}
+                             className="!w-auto accent-sasp-glow" />
+                      <span>Vybrat všechny bez adminů</span>
+                    </label>
+                    {selectedIds.size > 0 && (
+                      <button onClick={() => setConfirmBulk(true)} disabled={busy}
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border bg-red-500/20 border-red-400/40 text-red-300 hover:bg-red-500/30 hover:border-red-400/70 disabled:opacity-50">
+                        <Icons.Trash size={12} />
+                        <span>Smazat vybrané ({selectedIds.size})</span>
+                      </button>
+                    )}
+                  </div>
+                )}
                 {loading ? (
                   <div className="py-8 text-center"><Icons.Loader size={24} className="mx-auto text-sasp-glow/60" /></div>
                 ) : officers.length === 0 ? (
@@ -2103,6 +2205,10 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                       const isSelf = o.email === currentUserEmail;
                       return (
                         <div key={o.id} className={`flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15 ${o.visible_in_roster === false ? 'opacity-60' : ''}`}>
+                          <input type="checkbox" checked={selectedIds.has(o.id)} onChange={() => toggleSelect(o.id)}
+                                 disabled={busy || isSelf}
+                                 title={isSelf ? 'Nemůžeš vybrat sám sebe' : 'Vybrat'}
+                                 className="!w-auto accent-sasp-glow shrink-0" />
                           <div className="flex items-center justify-center w-10 h-10 rounded-md bg-sasp-glow/10 border border-sasp-glow/30">
                             <Icons.Shield size={18} className={o.is_admin ? "text-amber-400" : "text-sasp-glow/70"} />
                           </div>
@@ -2154,6 +2260,41 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                 )}
               </div>
             </>
+          )}
+
+          {/* ===== RESET TAB ===== */}
+          {tab === 'reset' && (
+            <div className="space-y-3">
+              <div className="rounded-md border border-red-400/30 bg-red-500/5 p-3 font-mono text-[10px] uppercase tracking-widest text-red-300/80 leading-relaxed">
+                Nevratné akce. Doporučené pořadí: vozidla → response fleet → activity log (log naposledy, ať v něm nezůstanou záznamy o samotném mazání).
+              </div>
+
+              {resetNote && (
+                <div className="rounded-md border border-emerald-400/30 bg-emerald-500/10 p-3 font-mono text-[11px] text-emerald-300">
+                  {resetNote}
+                </div>
+              )}
+
+              {Object.entries(RESET_TARGETS).map(([key, t]) => {
+                const count = resetCounts ? resetCounts[key] : null;
+                return (
+                  <div key={key} className="flex items-center gap-3 p-4 rounded-md glass border border-red-400/20">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-display font-bold text-sasp-ice">
+                        {t.label}
+                        <span className="ml-2 font-mono text-[11px] text-sasp-glow/60">({count === null ? '…' : count})</span>
+                      </div>
+                      <div className="text-[12px] text-sasp-ice/60 leading-relaxed">{t.desc}</div>
+                    </div>
+                    <button onClick={() => setConfirmReset(key)} disabled={busy || !count}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border bg-red-500/20 border-red-400/40 text-red-300 hover:bg-red-500/30 hover:border-red-400/70 disabled:opacity-30 disabled:cursor-not-allowed">
+                      <Icons.Trash size={12} />
+                      <span>Smazat vše</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           {/* ===== ACTIVITY LOG TAB ===== */}
@@ -2290,6 +2431,27 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
               danger
               onCancel={() => setConfirmRemove(null)}
               onConfirm={() => removeOfficer(confirmRemove)}
+            />
+          )}
+          {confirmBulk && (
+            <ConfirmDialog
+              open={confirmBulk}
+              title="Smazat vybrané officery?"
+              message={`Opravdu chceš odebrat ${selectedIds.size} officerů? Jejich účty v Supabase Auth zůstanou, jen přijdou o přístup officera.`}
+              confirmText={`Smazat (${selectedIds.size})`}
+              danger
+              onCancel={() => setConfirmBulk(false)}
+              onConfirm={removeSelectedOfficers}
+            />
+          )}
+          {confirmReset && (
+            <TypeToConfirmDialog
+              open={!!confirmReset}
+              title={`Smazat: ${RESET_TARGETS[confirmReset].label}`}
+              message={`Smaže se ${resetCounts ? resetCounts[confirmReset] : 'všech'} záznamů. Tuhle akci nejde vrátit zpět.`}
+              busy={busy}
+              onCancel={() => setConfirmReset(null)}
+              onConfirm={() => runReset(confirmReset)}
             />
           )}
         </AnimatePresence>
@@ -2916,8 +3078,8 @@ function RosterModal({ open, onClose }) {
     document.addEventListener('keydown', onKey);
 
     setLoading(true);
-    supabase.from('officers').select('email, display_name, rank, callsign')
-      .eq('visible_in_roster', true)
+    // get_roster() returns only visible officers and only name/rank/callsign (no emails, no admin flag)
+    supabase.rpc('get_roster')
       .then(({ data, error }) => {
         if (error) setError(error.message);
         else setOfficers(data || []);
@@ -2936,7 +3098,7 @@ function RosterModal({ open, onClose }) {
     const ra = RANK_ORDER[a.rank] ?? 99;
     const rb = RANK_ORDER[b.rank] ?? 99;
     if (ra !== rb) return ra - rb;
-    return (a.display_name || a.email).localeCompare(b.display_name || b.email);
+    return (a.display_name || '').localeCompare(b.display_name || '');
   });
 
   return (
@@ -2975,16 +3137,16 @@ function RosterModal({ open, onClose }) {
             <div className="py-8 text-center font-mono text-xs uppercase tracking-widest text-sasp-glow/50">Žádní officeři</div>
           ) : (
             <div className="space-y-2">
-              {sorted.map(o => {
+              {sorted.map((o, i) => {
                 const rm = RANK_META[o.rank] || RANK_META.Member;
                 return (
-                  <div key={o.email} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15">
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-md glass border border-sasp-glow/15">
                     <div className="flex items-center justify-center w-10 h-10 rounded-md bg-sasp-glow/10 border border-sasp-glow/30">
                       <Icons.Shield size={18} className="text-sasp-glow/70" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || o.email}</span>
+                        <span className="font-display font-bold text-sasp-ice truncate">{o.display_name || 'Bez jména'}</span>
                         {o.callsign && <span className="px-1.5 py-0.5 rounded text-[9px] font-mono tracking-widest bg-sasp-glow/10 border border-sasp-glow/25 text-sasp-glow/80">{o.callsign}</span>}
                         <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold ${rm.bg} border ${rm.border} ${rm.text}`}>{o.rank || 'Member'}</span>
                       </div>
@@ -3027,6 +3189,47 @@ function ConfirmDialog({ open, title, message, confirmText = 'Potvrdit', danger,
                                 ? 'bg-red-500/20 border-red-400/40 text-red-300 hover:bg-red-500/30 hover:border-red-400/70'
                                 : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70'}`}>
             {confirmText}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// Irreversible mass actions: the button stays disabled until the keyword is typed
+function TypeToConfirmDialog({ open, title, message, keyword = 'SMAZAT', busy, onConfirm, onCancel }) {
+  const [text, setText] = useState('');
+  useEffect(() => { if (open) setText(''); }, [open]);
+  if (!open) return null;
+  const ok = text.trim().toUpperCase() === keyword;
+  return (
+    <motion.div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onCancel}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md clip-corners glass-strong rounded-lg p-6 border-red-400/40"
+      >
+        <h3 className="font-display font-bold text-lg tracking-wider text-sasp-ice mb-3">{title}</h3>
+        <p className="text-sasp-ice/80 mb-4 leading-relaxed">{message}</p>
+        <label className="block font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">
+          Pro potvrzení napiš <span className="text-red-300 font-bold">{keyword}</span>
+        </label>
+        <input type="text" value={text} autoFocus
+               onChange={(e) => setText(e.target.value)}
+               onKeyDown={(e) => { if (e.key === 'Enter' && ok && !busy) onConfirm(); }}
+               className="mb-6" />
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} disabled={busy}
+                  className="px-4 py-2 rounded-md glass border border-sasp-glow/20 font-mono text-[11px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition disabled:opacity-50">
+            Zrušit
+          </button>
+          <button onClick={onConfirm} disabled={!ok || busy}
+                  className="px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition border bg-red-500/20 border-red-400/40 text-red-300 hover:bg-red-500/30 hover:border-red-400/70 disabled:opacity-30 disabled:cursor-not-allowed">
+            {busy ? 'Mažu…' : 'Smazat vše'}
           </button>
         </div>
       </motion.div>
