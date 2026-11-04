@@ -238,6 +238,8 @@ const Icons = {
   Edit: (p) => <Icon {...p} d={["M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7", "m18.5 2.5 3 3L10 17l-4 1 1-4z"]} />,
   Trash: (p) => <Icon {...p} d={["M3 6h18", "m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6", "M10 11v6", "M14 11v6", "m9 6 1-3h4l1 3"]} />,
   Upload: (p) => <Icon {...p} d={["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M17 8l-5-5-5 5", "M12 3v12"]} />,
+  Download: (p) => <Icon {...p} d={["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"]} />,
+  User: (p) => <Icon {...p} d={["M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"]} />,
   Lock: (p) => <Icon {...p} d={["M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z", "M7 11V7a5 5 0 0 1 10 0v4"]} />,
   LogOut: (p) => <Icon {...p} d={["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "m16 17 5-5-5-5", "M21 12H9"]} />,
   Check: (p) => <Icon {...p} d="M20 6 9 17l-5-5" />,
@@ -292,7 +294,7 @@ const RANK_META = {
   'Member': { color: '#94a3b8', bg: 'bg-slate-500/15',  border: 'border-slate-400/30',  text: 'text-slate-300' },
 };
 
-const APP_VERSION = '0.6';
+const APP_VERSION = '0.7';
 const STORAGE_KEY_PINNED = 'teu_pinned_v1';
 
 function loadSet(key) {
@@ -452,7 +454,7 @@ function ConnectionStatus({ connected, syncing }) {
   );
 }
 
-function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, onRoster, connected, syncing }) {
+function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, onRoster, onProfile, connected, syncing }) {
   const { officer, session } = auth;
   const isOfficer = !!officer;
 
@@ -498,6 +500,11 @@ function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPan
               <Icons.Shield size={12} className="text-emerald-400" />
               <span className="truncate max-w-[120px]">{officer.display_name || session.user.email}</span>
             </div>
+            <button onClick={onProfile}
+                    className="p-2 glass rounded-md text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15"
+                    title="Můj profil">
+              <Icons.User size={14} />
+            </button>
             <button onClick={onLogout}
                     className="p-2 glass rounded-md text-sasp-glow/60 hover:text-red-400 hover:border-red-400/40 transition border border-sasp-glow/15"
                     title="Odhlásit se">
@@ -1110,6 +1117,9 @@ function LoginModal({ open, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mode, setMode] = useState('login'); // 'login' or 'signup'
+  const [displayName, setDisplayName] = useState('');
+  const [callsign, setCallsign] = useState('');
+  const [info, setInfo] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -1127,10 +1137,15 @@ function LoginModal({ open, onClose }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    setInfo('');
     setLoading(true);
     try {
       if (mode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { display_name: displayName.trim(), callsign: callsign.trim() } },
+        });
         if (error) throw error;
         // If signup returned a session immediately (email confirmation off),
         // session is now live - just close the modal.
@@ -1138,7 +1153,7 @@ function LoginModal({ open, onClose }) {
           onClose();
         } else {
           // Email confirmation required - tell user and switch to login mode.
-          setError('Účet vytvořen! Zkontroluj e-mail pro potvrzení.');
+          setInfo('Účet vytvořen! Zkontroluj e-mail pro potvrzení. Poté tě musí admin schválit.');
           setMode('login');
         }
       } else {
@@ -1167,20 +1182,44 @@ function LoginModal({ open, onClose }) {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <Icons.Lock size={18} className="text-sasp-glow" />
-            <h2 className="font-display font-bold text-xl tracking-wider text-sasp-ice">Officer Login</h2>
+            <h2 className="font-display font-bold text-xl tracking-wider text-sasp-ice">{mode === 'login' ? 'Officer Login' : 'Registrace'}</h2>
           </div>
           <button onClick={onClose} className="p-1 text-sasp-glow/60 hover:text-sasp-glow transition" aria-label="Zavřít">
             <Icons.Close size={18} />
           </button>
         </div>
 
-        <p className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-6 leading-relaxed">
+        <div className="grid grid-cols-2 gap-1 p-1 mb-5 rounded-md bg-sasp-black/40 border border-sasp-glow/15">
+          {[['login', 'Přihlášení'], ['signup', 'Registrace']].map(([id, label]) => (
+            <button key={id} type="button"
+                    onClick={() => { setMode(id); setError(''); setInfo(''); }}
+                    className={`px-3 py-2 rounded font-mono text-[11px] uppercase tracking-widest transition ${
+                      mode === id ? 'bg-sasp-glow text-sasp-black' : 'text-sasp-glow/60 hover:text-sasp-glow'
+                    }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <p className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-5 leading-relaxed">
           {mode === 'login'
-            ? 'Přihlas se pro editaci databáze.'
-            : 'Vytvořit nový účet. Pro přístup k editaci musí admin přidat tvůj email do tabulky officers.'}
+            ? 'Přihlas se pro přístup do databáze.'
+            : 'Vyplň jméno a volačku. Po registraci tě musí admin schválit, teprve pak uvidíš databázi.'}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'signup' && (
+            <>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Jméno</label>
+                <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required maxLength={60} autoComplete="name" placeholder="např. Jan Novák" />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Volačka</label>
+                <input type="text" value={callsign} onChange={(e) => setCallsign(e.target.value)} required maxLength={30} placeholder="např. TEU-12" />
+              </div>
+            </>
+          )}
           <div>
             <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">E-mail</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
@@ -1189,6 +1228,12 @@ function LoginModal({ open, onClose }) {
             <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Heslo</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
           </div>
+
+          {info && (
+            <div className="p-3 rounded-md border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 text-sm font-mono">
+              {info}
+            </div>
+          )}
 
           {error && (
             <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">
@@ -1200,12 +1245,7 @@ function LoginModal({ open, onClose }) {
                   className="w-full px-4 py-2.5 rounded-md font-mono text-xs uppercase tracking-widest transition
                              bg-sasp-glow text-sasp-black hover:bg-sasp-ice disabled:opacity-50 flex items-center justify-center gap-2">
             {loading ? <Icons.Loader size={14} /> : (mode === 'login' ? <Icons.Lock size={14} /> : <Icons.Plus size={14} />)}
-            <span>{loading ? 'Pracuji...' : (mode === 'login' ? 'Přihlásit se' : 'Vytvořit účet')}</span>
-          </button>
-
-          <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
-                  className="w-full text-center font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 hover:text-sasp-glow transition">
-            {mode === 'login' ? 'Vytvořit nový účet →' : '← Přihlásit se k existujícímu účtu'}
+            <span>{loading ? 'Pracuji...' : (mode === 'login' ? 'Přihlásit se' : 'Zaregistrovat se')}</span>
           </button>
         </form>
       </motion.div>
@@ -1778,6 +1818,452 @@ function ActivityDiff({ log }) {
 }
 
 // ============================================================
+// BACKUP / IMPORT - čisté pomocné funkce (bez React/DOM)
+// ============================================================
+// BEGIN IMPORT HELPERS
+const VALID_TIERS = ['S+', 'S', 'A+', 'A'];
+const CSV_COLUMNS = ['vehicle', 'tier', 'non_locator', 'response', 'response_plus', 'notes', 'image'];
+
+function makeVehicleId(name, tier, nonLocator) {
+  return slugify(name) + (nonLocator ? '-nl' : ('-' + tier.toLowerCase().replace('+', 'plus')));
+}
+
+// Rozloží CSV text na řádky polí. Zvládá uvozovky, víceřádková pole, BOM a oddělovač ; nebo ,
+function parseCsv(text) {
+  text = text.replace(/^﻿/, '');
+  const firstLine = text.split(/\r?\n/, 1)[0] || '';
+  const delim = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"' && field === '') {
+      inQuotes = true;
+    } else if (c === delim) {
+      row.push(field); field = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      rows.push(row); row = [];
+    } else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ''));
+}
+
+function csvCell(value, delim = ';') {
+  const s = String(value ?? '');
+  return (s.includes(delim) || s.includes('"') || s.includes('\n') || s.includes('\r'))
+    ? '"' + s.replace(/"/g, '""') + '"'
+    : s;
+}
+
+function rowsToCsv(rows) {
+  // BOM + středník, aby český Excel soubor otevřel správně
+  return '﻿' + rows.map(r => r.map(c => csvCell(c)).join(';')).join('\r\n') + '\r\n';
+}
+
+function vehiclesToCsv(vehicles) {
+  const rows = [CSV_COLUMNS];
+  for (const v of vehicles) {
+    const resp = Array.isArray(v.responses) ? v.responses : [];
+    const carsFor = (t) => ((resp.find(r => (r.tier ?? null) === t) || {}).cars || []).join('|');
+    const base = v.non_locator ? ((resp[0] || {}).cars || []).join('|') : carsFor(v.tier);
+    const plus = v.non_locator ? '' : carsFor(v.tier + '+');
+    rows.push([v.vehicle, v.tier, v.non_locator ? 'ano' : 'ne', base, plus, v.notes || '', v.image || '']);
+  }
+  return rowsToCsv(rows);
+}
+
+function csvTemplate() {
+  return rowsToCsv([
+    CSV_COLUMNS,
+    ['Příklad locator', 'S', 'ne', 'Comet', 'Comet|Dominator', 'Poznámka k vozidlu', ''],
+    ['Příklad non-locator', 'A', 'ano', 'Sentinel GTS-R|Dominator GSX', '', '', ''],
+  ]);
+}
+
+// Ověří a sjednotí jedno vozidlo (z CSV i z JSON). Vrací { row } nebo { error }.
+function normalizeVehicle(raw) {
+  const name = String((raw && raw.vehicle) || '').trim();
+  if (!name) return { error: 'chybí název vozidla' };
+  const tier = String(raw.tier || '').trim().toUpperCase();
+  if (!VALID_TIERS.includes(tier)) return { error: `neplatný tier "${raw.tier}" (povoleno ${VALID_TIERS.join(', ')})` };
+  const nonLocator = !!raw.non_locator;
+  const responses = [];
+  for (const r of (Array.isArray(raw.responses) ? raw.responses : [])) {
+    const cars = (Array.isArray(r && r.cars) ? r.cars : []).map(c => String(c).trim()).filter(Boolean);
+    if (cars.length === 0) continue;
+    if (nonLocator) {
+      responses.push({ cars, tier: null });
+    } else {
+      const rt = String(r.tier ?? '').trim().toUpperCase();
+      if (!VALID_TIERS.includes(rt)) return { error: `neplatný tier response varianty "${r.tier}"` };
+      responses.push({ cars, tier: rt });
+    }
+  }
+  if (!nonLocator && responses.length === 0) return { error: 'locator vozidlo potřebuje aspoň jedno response auto' };
+  const id = String(raw.id || '').trim() || makeVehicleId(name, tier, nonLocator);
+  return {
+    row: {
+      id,
+      vehicle: name,
+      tier,
+      responses,
+      notes: String(raw.notes || ''),
+      image: String(raw.image || '').trim() || null,
+      non_locator: nonLocator,
+    },
+  };
+}
+
+function normalizeFleet(raw) {
+  const name = String((raw && raw.name) || '').trim();
+  if (!name) return { error: 'chybí název' };
+  return {
+    row: {
+      name,
+      image_url: String(raw.image_url || '').trim() || null,
+      notes: String(raw.notes || ''),
+      active: raw.active !== false,
+      sort_order: Number(raw.sort_order) || 0,
+    },
+  };
+}
+
+function csvToVehicles(text) {
+  const rows = parseCsv(text);
+  const out = { rows: [], problems: [] };
+  if (rows.length === 0) { out.problems.push('Soubor je prázdný'); return out; }
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const col = {};
+  CSV_COLUMNS.forEach(c => { col[c] = header.indexOf(c); });
+  if (col.vehicle < 0 || col.tier < 0) {
+    out.problems.push('V hlavičce chybí sloupce "vehicle" a "tier". Stáhni si šablonu.');
+    return out;
+  }
+  const get = (r, c) => (col[c] >= 0 ? (r[col[c]] || '').trim() : '');
+  const carList = (s) => s.split('|').map(x => x.trim()).filter(Boolean);
+  rows.slice(1).forEach((r, idx) => {
+    const line = idx + 2;
+    const tier = get(r, 'tier').toUpperCase();
+    const nonLocator = /^(1|true|ano|yes|y|x)$/i.test(get(r, 'non_locator'));
+    const plusTier = (tier === 'S' || tier === 'A') ? tier + '+' : null;
+    const responses = nonLocator
+      ? [{ tier: null, cars: carList(get(r, 'response')) }]
+      : [{ tier, cars: carList(get(r, 'response')) }, ...(plusTier ? [{ tier: plusTier, cars: carList(get(r, 'response_plus')) }] : [])];
+    const res = normalizeVehicle({
+      vehicle: get(r, 'vehicle'),
+      tier,
+      non_locator: nonLocator,
+      responses,
+      notes: get(r, 'notes'),
+      image: get(r, 'image'),
+    });
+    if (res.error) out.problems.push(`Řádek ${line} (${get(r, 'vehicle') || '?'}): ${res.error}`);
+    else out.rows.push(res.row);
+  });
+  return out;
+}
+
+function parseBackupJson(text) {
+  let data;
+  try { data = JSON.parse(text); } catch (e) { throw new Error('Soubor není platný JSON'); }
+  const vs = Array.isArray(data) ? data : (data && data.vehicles);
+  const fs = data && data.response_vehicles;
+  if (!Array.isArray(vs) && !Array.isArray(fs)) throw new Error('V JSON chybí pole "vehicles" nebo "response_vehicles"');
+  const out = { vehicles: { rows: [], problems: [] }, fleet: { rows: [], problems: [] } };
+  (Array.isArray(vs) ? vs : []).forEach((raw, i) => {
+    const res = normalizeVehicle(raw);
+    if (res.error) out.vehicles.problems.push(`Vozidlo #${i + 1} (${(raw && raw.vehicle) || '?'}): ${res.error}`);
+    else out.vehicles.rows.push(res.row);
+  });
+  (Array.isArray(fs) ? fs : []).forEach((raw, i) => {
+    const res = normalizeFleet(raw);
+    if (res.error) out.fleet.problems.push(`Response auto #${i + 1}: ${res.error}`);
+    else out.fleet.rows.push(res.row);
+  });
+  return out;
+}
+
+// Porovná načtená data s databází: co je nové, co je duplicita, co je špatně.
+function buildImportPlan(parsed, vehicleIds, fleetNames) {
+  const problems = [...parsed.vehicles.problems, ...parsed.fleet.problems];
+  const seenIds = new Set();
+  const vFresh = [];
+  const vDupes = [];
+  for (const row of parsed.vehicles.rows) {
+    if (seenIds.has(row.id)) {
+      problems.push(`Vozidlo "${row.vehicle}": ID "${row.id}" je v souboru víckrát, další výskyt přeskočen`);
+      continue;
+    }
+    seenIds.add(row.id);
+    (vehicleIds.has(row.id) ? vDupes : vFresh).push(row);
+  }
+  const existingByLower = new Map(fleetNames.map(n => [n.toLowerCase(), n]));
+  const seenNames = new Set();
+  const fFresh = [];
+  const fDupes = [];
+  for (const row of parsed.fleet.rows) {
+    const key = row.name.toLowerCase();
+    if (seenNames.has(key)) {
+      problems.push(`Response auto "${row.name}" je v souboru víckrát, další výskyt přeskočen`);
+      continue;
+    }
+    seenNames.add(key);
+    if (existingByLower.has(key)) fDupes.push({ row, existingName: existingByLower.get(key) });
+    else fFresh.push(row);
+  }
+  const known = new Set([...fleetNames, ...parsed.fleet.rows.map(r => r.name)]);
+  const unknown = new Set();
+  for (const v of [...vFresh, ...vDupes]) {
+    for (const r of v.responses) for (const c of r.cars) if (!known.has(c)) unknown.add(c);
+  }
+  return {
+    vehicles: { fresh: vFresh, dupes: vDupes },
+    fleet: { fresh: fFresh, dupes: fDupes },
+    problems,
+    unknownCars: [...unknown].sort(),
+  };
+}
+// END IMPORT HELPERS
+
+function downloadFile(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ============================================================
+// BACKUP TAB (v Admin Panelu)
+// ============================================================
+function BackupTab({ currentUserEmail }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [plan, setPlan] = useState(null);
+  const [overwrite, setOverwrite] = useState(false);
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  async function fetchAll() {
+    const [v, f, o] = await Promise.all([
+      supabase.from('vehicles').select('*').order('vehicle'),
+      supabase.from('response_vehicles').select('*').order('sort_order').order('name'),
+      supabase.from('officers').select('email, display_name, rank, callsign, is_admin, visible_in_roster, created_at').order('created_at'),
+    ]);
+    const err = v.error || f.error || o.error;
+    if (err) throw err;
+    return { vehicles: v.data || [], response_vehicles: f.data || [], officers: o.data || [] };
+  }
+
+  async function exportJson() {
+    setBusy(true); setError(''); setNote('');
+    try {
+      const all = await fetchAll();
+      const payload = { app: 'sasp-teu', format: 1, exported_at: new Date().toISOString(), ...all };
+      downloadFile(`sasp-teu-zaloha-${today()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      setNote(`Staženo: ${all.vehicles.length} vozidel, ${all.response_vehicles.length} response aut, ${all.officers.length} officerů.`);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportCsv() {
+    setBusy(true); setError(''); setNote('');
+    try {
+      const { data, error } = await supabase.from('vehicles').select('*').order('vehicle');
+      if (error) throw error;
+      downloadFile(`sasp-teu-vozidla-${today()}.csv`, vehiclesToCsv(data || []), 'text/csv;charset=utf-8');
+      setNote(`Staženo: ${(data || []).length} vozidel.`);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setError(''); setNote(''); setPlan(null); setOverwrite(false); setFileName(file.name); setBusy(true);
+    try {
+      const text = await file.text();
+      const isJson = file.name.toLowerCase().endsWith('.json') || text.trimStart().startsWith('{') || text.trimStart().startsWith('[');
+      const parsed = isJson
+        ? parseBackupJson(text)
+        : { vehicles: csvToVehicles(text), fleet: { rows: [], problems: [] } };
+      const [v, f] = await Promise.all([
+        supabase.from('vehicles').select('id'),
+        supabase.from('response_vehicles').select('name'),
+      ]);
+      if (v.error || f.error) throw (v.error || f.error);
+      setPlan(buildImportPlan(parsed, new Set((v.data || []).map(x => x.id)), (f.data || []).map(x => x.name)));
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runImport() {
+    if (!plan) return;
+    setBusy(true); setError(''); setNote('');
+    let fleetDone = 0;
+    let vehiclesDone = 0;
+    try {
+      const fleetRows = [
+        ...plan.fleet.fresh,
+        ...(overwrite ? plan.fleet.dupes.map(d => ({ ...d.row, name: d.existingName })) : []),
+      ];
+      if (fleetRows.length > 0) {
+        const { error } = await supabase.from('response_vehicles').upsert(fleetRows, { onConflict: 'name' });
+        if (error) throw error;
+        fleetDone = fleetRows.length;
+      }
+      const vehicleRows = [
+        ...plan.vehicles.fresh,
+        ...(overwrite ? plan.vehicles.dupes : []),
+      ].map(r => ({ ...r, updated_by: currentUserEmail || null }));
+      for (let i = 0; i < vehicleRows.length; i += 50) {
+        const chunk = vehicleRows.slice(i, i + 50);
+        const q = overwrite
+          ? supabase.from('vehicles').upsert(chunk, { onConflict: 'id' })
+          : supabase.from('vehicles').insert(chunk);
+        const { error } = await q;
+        if (error) throw error;
+        vehiclesDone += chunk.length;
+      }
+      setNote(`Hotovo: ${vehiclesDone} vozidel a ${fleetDone} response aut zapsáno.`);
+      setPlan(null);
+      setFileName('');
+    } catch (e) {
+      setError(`${e.message || e} (před chybou zapsáno ${vehiclesDone} vozidel a ${fleetDone} response aut)`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const btn = 'flex items-center gap-2 px-3 py-2 rounded-md font-mono text-[10px] uppercase tracking-widest transition border border-sasp-glow/30 bg-sasp-glow/10 text-sasp-glow hover:bg-sasp-glow/20 hover:border-sasp-glow/60 disabled:opacity-50';
+  const writeCount = plan
+    ? plan.vehicles.fresh.length + plan.fleet.fresh.length + (overwrite ? plan.vehicles.dupes.length + plan.fleet.dupes.length : 0)
+    : 0;
+
+  return (
+    <div className="space-y-6">
+      {note && (
+        <div className="rounded-md border border-emerald-400/30 bg-emerald-500/10 p-3 font-mono text-[11px] text-emerald-300">{note}</div>
+      )}
+      {error && (
+        <div className="rounded-md border border-red-400/30 bg-red-500/10 p-3 font-mono text-[11px] text-red-300 break-words">{error}</div>
+      )}
+
+      <div>
+        <SectionTitle icon={<Icons.Download size={14} />} text="Export" />
+        <div className="rounded-md glass p-4 border border-sasp-glow/15 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={exportJson} disabled={busy} className={btn}><Icons.Download size={12} /><span>Celá záloha (JSON)</span></button>
+            <button onClick={exportCsv} disabled={busy} className={btn}><Icons.Download size={12} /><span>Vozidla (CSV)</span></button>
+            <button onClick={() => downloadFile('sasp-teu-sablona.csv', csvTemplate(), 'text/csv;charset=utf-8')} disabled={busy} className={btn}>
+              <Icons.Download size={12} /><span>Prázdná CSV šablona</span>
+            </button>
+          </div>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 leading-relaxed">
+            JSON = vozidla, response fleet a officeři (včetně e-mailů, soubor nikomu nesdílej). Activity log se nezálohuje.
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <SectionTitle icon={<Icons.Upload size={14} />} text="Import" />
+        <div className="rounded-md glass p-4 border border-sasp-glow/15 space-y-4">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/50 leading-relaxed">
+            JSON ze zálohy obnoví vozidla i response fleet. CSV přidá vozidla, auta v 'response' a 'response_plus' odděl znakem |.
+            Officeři se neobnovují, ti se zakládají registrací. Nic se nezapíše, dokud nepotvrdíš náhled.
+          </p>
+          <label className={`${btn} w-fit cursor-pointer`}>
+            <Icons.Upload size={12} />
+            <span>{busy && !plan ? 'Čtu...' : 'Vybrat soubor (.json / .csv)'}</span>
+            <input type="file" accept=".json,.csv,text/csv,application/json" onChange={onFile} disabled={busy} className="hidden" />
+          </label>
+
+          {plan && (
+            <div className="space-y-3 rounded-md border border-sasp-glow/20 bg-sasp-black/30 p-3">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 break-all">Náhled: {fileName}</div>
+              <div className="grid sm:grid-cols-2 gap-2 font-mono text-[11px]">
+                <div className="rounded border border-sasp-glow/15 p-2">
+                  <div className="text-sasp-glow/60 text-[10px] uppercase tracking-widest mb-1">Vozidla</div>
+                  <div className="text-emerald-300">{plan.vehicles.fresh.length} nových</div>
+                  <div className="text-amber-300">{plan.vehicles.dupes.length} duplicit ({overwrite ? 'přepíšou se' : 'přeskočí se'})</div>
+                </div>
+                <div className="rounded border border-sasp-glow/15 p-2">
+                  <div className="text-sasp-glow/60 text-[10px] uppercase tracking-widest mb-1">Response fleet</div>
+                  <div className="text-emerald-300">{plan.fleet.fresh.length} nových</div>
+                  <div className="text-amber-300">{plan.fleet.dupes.length} duplicit ({overwrite ? 'přepíšou se' : 'přeskočí se'})</div>
+                </div>
+              </div>
+
+              {plan.unknownCars.length > 0 && (
+                <div className="rounded border border-amber-400/30 bg-amber-500/5 p-2 font-mono text-[10px] text-amber-300/90 leading-relaxed break-words">
+                  Tato response auta nejsou v response fleet (přidej je v záložce Fleet, nebo je nejdřív naimportuj ze zálohy): {plan.unknownCars.join(', ')}
+                </div>
+              )}
+
+              {plan.problems.length > 0 && (
+                <div className="rounded border border-red-400/30 bg-red-500/5 p-2 font-mono text-[10px] text-red-300/90 leading-relaxed">
+                  <div className="mb-1 uppercase tracking-widest">{plan.problems.length} problémů (tyto řádky se nezapíšou)</div>
+                  <ul className="space-y-0.5 break-words">
+                    {plan.problems.slice(0, 10).map((p, i) => <li key={i}>{p}</li>)}
+                    {plan.problems.length > 10 && <li>... a dalších {plan.problems.length - 10}</li>}
+                  </ul>
+                </div>
+              )}
+
+              {(plan.vehicles.dupes.length > 0 || plan.fleet.dupes.length > 0) && (
+                <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
+                  <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)}
+                         className="!w-auto accent-sasp-glow" />
+                  <span>Přepsat duplicity daty ze souboru</span>
+                </label>
+              )}
+
+              <div className="flex gap-2 items-center flex-wrap">
+                <button onClick={runImport} disabled={busy || writeCount === 0}
+                        className="flex items-center gap-2 px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition border bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-40">
+                  {busy ? <Icons.Loader size={12} /> : <Icons.Check size={12} />}
+                  <span>{busy ? 'Zapisuji...' : `Importovat (${writeCount})`}</span>
+                </button>
+                <button onClick={() => { setPlan(null); setFileName(''); }} disabled={busy}
+                        className="px-3 py-2 rounded-md border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 hover:text-sasp-glow transition disabled:opacity-50">
+                  Zrušit
+                </button>
+                <span className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40">Každé vozidlo se zapíše i do activity logu.</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // ADMIN PANEL - správa officerů + audit log
 // ============================================================
 function AdminPanel({ open, onClose, currentUserEmail }) {
@@ -1799,6 +2285,10 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
   const [resetCounts, setResetCounts] = useState(null);
   const [confirmReset, setConfirmReset] = useState(null);
   const [resetNote, setResetNote] = useState('');
+  const [pending, setPending] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingEdits, setPendingEdits] = useState({});   // email -> { name, callsign, rank }
+  const [confirmReject, setConfirmReject] = useState(null);
 
   const [activityLog, setActivityLog] = useState([]);
   const [logLoading, setLogLoading] = useState(false);
@@ -1818,6 +2308,14 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     if (error) setError(error.message);
     else setOfficers(data || []);
     setLoading(false);
+  }
+
+  async function loadPending() {
+    setPendingLoading(true);
+    const { data, error } = await supabase.rpc('get_pending_registrations');
+    if (error) setError(error.message);
+    else setPending(data || []);
+    setPendingLoading(false);
   }
 
   async function loadActivity() {
@@ -1854,6 +2352,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
   useEffect(() => {
     if (!open) return;
     loadOfficers();
+    loadPending();
     loadActivity();
     document.body.classList.add('modal-open');
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -1897,7 +2396,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
       });
       if (error) throw error;
       setNewEmail(''); setNewName(''); setNewIsAdmin(false); setNewRank('Member'); setNewCallsign(''); setNewVisible(true);
-      await loadOfficers();
+      await Promise.all([loadOfficers(), loadPending()]);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -1916,6 +2415,49 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
     } finally {
       setBusy(false);
       setConfirmRemove(null);
+    }
+  }
+
+  function pendingForm(p) {
+    return { name: p.display_name || '', callsign: p.callsign || '', rank: 'Member', ...(pendingEdits[p.email] || {}) };
+  }
+
+  function setPendingField(p, field, value) {
+    setPendingEdits(prev => ({ ...prev, [p.email]: { ...pendingForm(p), [field]: value } }));
+  }
+
+  async function approvePending(p) {
+    const f = pendingForm(p);
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.from('officers').insert({
+        email: p.email.toLowerCase(),
+        display_name: f.name.trim() || null,
+        callsign: f.callsign.trim() || null,
+        rank: f.rank,
+        is_admin: false,
+        visible_in_roster: true,
+      });
+      if (error) throw error;
+      await Promise.all([loadOfficers(), loadPending()]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectPending(p) {
+    setBusy(true); setError('');
+    try {
+      const { error } = await supabase.rpc('reject_registration', { p_email: p.email });
+      if (error) throw error;
+      await loadPending();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+      setConfirmReject(null);
     }
   }
 
@@ -2106,6 +2648,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
               { id: 'officers', label: 'Officeři', icon: <Icons.Shield size={12} /> },
               { id: 'fleet', label: 'Fleet', icon: <Icons.Car size={12} /> },
               { id: 'activity', label: 'Aktivita', icon: <Icons.Activity size={12} /> },
+              { id: 'backup', label: 'Záloha', icon: <Icons.Download size={12} /> },
               { id: 'reset', label: 'Reset', icon: <Icons.Trash size={12} /> },
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -2118,6 +2661,9 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                 {t.id === 'activity' && logTotal > 0 && (
                   <span className="px-1.5 rounded-full bg-sasp-glow/20 text-[9px]">{logTotal}</span>
                 )}
+                {t.id === 'officers' && pending.length > 0 && (
+                  <span className="px-1.5 rounded-full bg-amber-500/30 text-amber-300 text-[9px]">{pending.length}</span>
+                )}
               </button>
             ))}
           </div>
@@ -2127,6 +2673,59 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
           {/* ===== OFFICERS TAB ===== */}
           {tab === 'officers' && (
             <>
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <SectionTitle icon={<Icons.AlertTriangle size={14} />} text={`Čekající registrace (${pending.length})`} />
+                  <button onClick={loadPending} disabled={pendingLoading}
+                          className="mb-3 px-2 py-1 rounded-md border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/50 transition disabled:opacity-50">
+                    {pendingLoading ? '...' : 'Obnovit'}
+                  </button>
+                </div>
+                {pending.length === 0 ? (
+                  <div className="rounded-md glass border border-sasp-glow/15 p-4 text-center font-mono text-[10px] uppercase tracking-widest text-sasp-glow/50">
+                    Nikdo nečeká na schválení
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {pending.map(p => {
+                      const f = pendingForm(p);
+                      return (
+                        <div key={p.email} className="rounded-md border border-amber-400/30 bg-amber-500/5 p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="font-mono text-[11px] text-sasp-ice break-all">{p.email}</div>
+                            <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-widest text-sasp-glow/50">
+                              {!p.email_confirmed && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300">E-mail nepotvrzen</span>}
+                              <span>{formatTimeAgo(p.created_at)}</span>
+                            </div>
+                          </div>
+                          <div className="grid md:grid-cols-3 gap-2">
+                            <input type="text" value={f.name} onChange={(e) => setPendingField(p, 'name', e.target.value)}
+                                   placeholder="Jméno" maxLength={60} disabled={busy} />
+                            <input type="text" value={f.callsign} onChange={(e) => setPendingField(p, 'callsign', e.target.value)}
+                                   placeholder="Volačka" maxLength={30} disabled={busy} />
+                            <select value={f.rank} onChange={(e) => setPendingField(p, 'rank', e.target.value)} disabled={busy}>
+                              {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setConfirmReject(p)} disabled={busy}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border bg-red-500/10 border-red-400/40 text-red-300 hover:bg-red-500/25 hover:border-red-400/70 disabled:opacity-50">
+                              <Icons.Close size={12} />
+                              <span>Odmítnout</span>
+                            </button>
+                            <button onClick={() => approvePending(p)} disabled={busy}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-50">
+                              {busy ? <Icons.Loader size={12} /> : <Icons.Check size={12} />}
+                              <span>Schválit</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div>
                 <SectionTitle icon={<Icons.Plus size={14} />} text="Přidat officera" />
                 <form onSubmit={addOfficer} className="space-y-3 rounded-md glass p-4 border border-sasp-glow/15">
@@ -2166,7 +2765,7 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                     <span>Udělit admin práva (může spravovat ostatní)</span>
                   </label>
                   <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 leading-relaxed">
-                    ⚠️ Officer si musí předem vytvořit účet přes "Officer login → Vytvořit nový účet" se stejným emailem.
+                    ⚠️ Officer se musí zaregistrovat (Officer login → Registrace) se stejným e-mailem. Kdo se už registroval, ať ho schválíš výše v Čekajících registracích.
                   </p>
                   <button type="submit" disabled={busy}
                           className="flex items-center gap-2 px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition border bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-50">
@@ -2262,11 +2861,14 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
             </>
           )}
 
+          {/* ===== BACKUP TAB ===== */}
+          {tab === 'backup' && <BackupTab currentUserEmail={currentUserEmail} />}
+
           {/* ===== RESET TAB ===== */}
           {tab === 'reset' && (
             <div className="space-y-3">
               <div className="rounded-md border border-red-400/30 bg-red-500/5 p-3 font-mono text-[10px] uppercase tracking-widest text-red-300/80 leading-relaxed">
-                Nevratné akce. Doporučené pořadí: vozidla → response fleet → activity log (log naposledy, ať v něm nezůstanou záznamy o samotném mazání).
+                Nevratné akce. Nejdřív si stáhni zálohu v záložce Záloha. Doporučené pořadí: vozidla → response fleet → activity log (log naposledy, ať v něm nezůstanou záznamy o samotném mazání).
               </div>
 
               {resetNote && (
@@ -2426,18 +3028,29 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
             <ConfirmDialog
               open={!!confirmRemove}
               title="Odebrat officera?"
-              message={`Opravdu chceš odebrat ${confirmRemove.display_name || confirmRemove.email}?`}
+              message={`Opravdu chceš odebrat ${confirmRemove.display_name || confirmRemove.email}? Smaže se i jeho přihlašovací účet, pro nový přístup se musí znovu zaregistrovat.`}
               confirmText="Odebrat"
               danger
               onCancel={() => setConfirmRemove(null)}
               onConfirm={() => removeOfficer(confirmRemove)}
             />
           )}
+          {confirmReject && (
+            <ConfirmDialog
+              open={!!confirmReject}
+              title="Odmítnout registraci?"
+              message={`Účet ${confirmReject.email} se smaže. Dotyčný se může kdykoli zaregistrovat znovu.`}
+              confirmText="Odmítnout"
+              danger
+              onCancel={() => setConfirmReject(null)}
+              onConfirm={() => rejectPending(confirmReject)}
+            />
+          )}
           {confirmBulk && (
             <ConfirmDialog
               open={confirmBulk}
               title="Smazat vybrané officery?"
-              message={`Opravdu chceš odebrat ${selectedIds.size} officerů? Jejich účty v Supabase Auth zůstanou, jen přijdou o přístup officera.`}
+              message={`Opravdu chceš odebrat ${selectedIds.size} officerů? Smažou se i jejich přihlašovací účty, pro nový přístup se musí znovu zaregistrovat.`}
               confirmText={`Smazat (${selectedIds.size})`}
               danger
               onCancel={() => setConfirmBulk(false)}
@@ -2907,6 +3520,16 @@ function FleetEditor({ open, item, existingNames, onClose, onSaved }) {
 // ============================================================
 const CHANGELOG = [
   {
+    version: '0.7',
+    date: '4. 11. 2026',
+    changes: [
+      { type: 'new', text: 'Registrace: při vytvoření účtu zadáš jméno a volačku. Přihlášení a Registrace jsou teď přehledné záložky.' },
+      { type: 'new', text: 'Admin Panel → Officeři: seznam čekajících registrací s tlačítky Schválit a Odmítnout. Jméno, volačku i hodnost lze před schválením upravit.' },
+      { type: 'new', text: 'Admin Panel → Záloha: export celé databáze (JSON) a vozidel (CSV) a import ze souboru s náhledem (nová vs. duplicitní vozidla) před zápisem.' },
+      { type: 'new', text: 'Můj profil (ikona vedle odhlášení): každý officer si může sám upravit svou volačku.' },
+    ],
+  },
+  {
     version: '0.6',
     date: '30. 7. 2026',
     changes: [
@@ -3066,6 +3689,96 @@ function ChangelogModal({ open, onClose }) {
 // ============================================================
 // ROSTER (public, read-only — editing stays in AdminPanel)
 // ============================================================
+function ProfileModal({ open, officer, email, onClose, onSaved }) {
+  const [callsign, setCallsign] = useState(officer?.callsign || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  async function save(e) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('update_my_callsign', { p_callsign: callsign });
+      if (error) throw error;
+      await onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Nepodařilo se uložit');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const rm = RANK_META[officer?.rank] || RANK_META.Member;
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md clip-corners glass-strong rounded-lg p-6 border-sasp-glow/30 shadow-[0_0_60px_rgba(59,130,246,0.25)]"
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <Icons.User size={18} className="text-sasp-glow" />
+            <h2 className="font-display font-bold text-xl tracking-wider text-sasp-ice">Můj profil</h2>
+          </div>
+          <button onClick={onClose} className="p-1 text-sasp-glow/60 hover:text-sasp-glow transition" aria-label="Zavřít">
+            <Icons.Close size={18} />
+          </button>
+        </div>
+
+        <div className="mb-5 space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-display font-bold text-sasp-ice">{officer?.display_name || email}</span>
+            <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold ${rm.bg} border ${rm.border} ${rm.text}`}>{officer?.rank || 'Member'}</span>
+          </div>
+          <div className="font-mono text-[10px] text-sasp-glow/50 break-all">{email}</div>
+        </div>
+
+        <form onSubmit={save} className="space-y-4">
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Volačka</label>
+            <input type="text" value={callsign} onChange={(e) => setCallsign(e.target.value)} maxLength={30} placeholder="např. TEU-12" />
+            <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 mt-1.5 leading-relaxed">
+              Jméno a hodnost mění admin.
+            </p>
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-md border border-red-400/30 bg-red-500/10 text-red-300 text-sm font-mono">{error}</div>
+          )}
+
+          <button type="submit" disabled={busy}
+                  className="w-full px-4 py-2.5 rounded-md font-mono text-xs uppercase tracking-widest transition
+                             bg-sasp-glow text-sasp-black hover:bg-sasp-ice disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy ? <Icons.Loader size={14} /> : <Icons.Check size={14} />}
+            <span>{busy ? 'Ukládám...' : 'Uložit'}</span>
+          </button>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function RosterModal({ open, onClose }) {
   const [officers, setOfficers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3294,6 +4007,7 @@ function App() {
   const [editorVehicle, setEditorVehicle] = useState(null);  // null = add, obj = edit
   const [adminOpen, setAdminOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [historyVehicle, setHistoryVehicle] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [toast, setToast] = useState(null);
@@ -3533,6 +4247,7 @@ function App() {
         onAddVehicle={() => { setEditorVehicle(null); setEditorOpen(true); }}
         onAdminPanel={() => setAdminOpen(true)}
         onRoster={() => setRosterOpen(true)}
+        onProfile={() => setProfileOpen(true)}
         connected={connected}
         syncing={syncing}
       />
@@ -3700,6 +4415,18 @@ function App() {
 
       <AnimatePresence>
         {rosterOpen && <RosterModal open={rosterOpen} onClose={() => setRosterOpen(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {profileOpen && auth.officer && (
+          <ProfileModal
+            open={profileOpen}
+            officer={auth.officer}
+            email={auth.session?.user?.email}
+            onClose={() => setProfileOpen(false)}
+            onSaved={async () => { auth.refreshOfficer(); showToast('Volačka uložena', 'success'); }}
+          />
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
