@@ -1212,11 +1212,11 @@ function LoginModal({ open, onClose }) {
             <>
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Jméno</label>
-                <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required maxLength={60} autoComplete="name" placeholder="např. Jan Novák" />
+                <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required maxLength={60} autoComplete="name" placeholder="John Doe" />
               </div>
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Volačka</label>
-                <input type="text" value={callsign} onChange={(e) => setCallsign(e.target.value)} required maxLength={30} placeholder="např. TEU-12" />
+                <input type="text" value={callsign} onChange={(e) => setCallsign(e.target.value)} required maxLength={30} placeholder="V-99" />
               </div>
             </>
           )}
@@ -2271,12 +2271,6 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
 
   const [officers, setOfficers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [newEmail, setNewEmail] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newIsAdmin, setNewIsAdmin] = useState(false);
-  const [newRank, setNewRank] = useState('Member');
-  const [newCallsign, setNewCallsign] = useState('');
-  const [newVisible, setNewVisible] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmRemove, setConfirmRemove] = useState(null);
@@ -2379,30 +2373,6 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
   }, [open, tab]);
 
   if (!open) return null;
-
-  async function addOfficer(e) {
-    e.preventDefault();
-    setError('');
-    if (!newEmail.trim()) { setError('Email je povinný'); return; }
-    setBusy(true);
-    try {
-      const { error } = await supabase.from('officers').insert({
-        email: newEmail.trim().toLowerCase(),
-        display_name: newName.trim() || null,
-        is_admin: newIsAdmin,
-        rank: newRank,
-        callsign: newCallsign.trim() || null,
-        visible_in_roster: newVisible,
-      });
-      if (error) throw error;
-      setNewEmail(''); setNewName(''); setNewIsAdmin(false); setNewRank('Member'); setNewCallsign(''); setNewVisible(true);
-      await Promise.all([loadOfficers(), loadPending()]);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function removeOfficer(officer) {
     setBusy(true); setError('');
@@ -2724,55 +2694,6 @@ function AdminPanel({ open, onClose, currentUserEmail }) {
                     })}
                   </div>
                 )}
-              </div>
-
-              <div>
-                <SectionTitle icon={<Icons.Plus size={14} />} text="Přidat officera" />
-                <form onSubmit={addOfficer} className="space-y-3 rounded-md glass p-4 border border-sasp-glow/15">
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">E-mail *</label>
-                      <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
-                             placeholder="officer@example.com" required />
-                    </div>
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Jméno (volitelné)</label>
-                      <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
-                             placeholder="např. Petr" />
-                    </div>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Hodnost</label>
-                      <select value={newRank} onChange={(e) => setNewRank(e.target.value)}>
-                        {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Volací znak (volitelné)</label>
-                      <input type="text" value={newCallsign} onChange={(e) => setNewCallsign(e.target.value)}
-                             placeholder="např. 1-A-12" />
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
-                    <input type="checkbox" checked={newVisible} onChange={(e) => setNewVisible(e.target.checked)}
-                           className="!w-auto accent-sasp-glow" />
-                    <span>Viditelný v rosteru</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow transition">
-                    <input type="checkbox" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)}
-                           className="!w-auto accent-sasp-glow" />
-                    <span>Udělit admin práva (může spravovat ostatní)</span>
-                  </label>
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 leading-relaxed">
-                    ⚠️ Officer se musí zaregistrovat (Officer login → Registrace) se stejným e-mailem. Kdo se už registroval, ať ho schválíš výše v Čekajících registracích.
-                  </p>
-                  <button type="submit" disabled={busy}
-                          className="flex items-center gap-2 px-4 py-2 rounded-md font-mono text-[11px] uppercase tracking-widest transition border bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 disabled:opacity-50">
-                    {busy ? <Icons.Loader size={12} /> : <Icons.Plus size={12} />}
-                    <span>{busy ? 'Přidávám...' : 'Přidat officera'}</span>
-                  </button>
-                </form>
               </div>
 
               <div>
@@ -3757,7 +3678,7 @@ function ProfileModal({ open, officer, email, onClose, onSaved }) {
         <form onSubmit={save} className="space-y-4">
           <div>
             <label className="font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60 mb-1">Volačka</label>
-            <input type="text" value={callsign} onChange={(e) => setCallsign(e.target.value)} maxLength={30} placeholder="např. TEU-12" />
+            <input type="text" value={callsign} onChange={(e) => setCallsign(e.target.value)} maxLength={30} placeholder="V-99" />
             <p className="font-mono text-[9px] uppercase tracking-widest text-sasp-glow/40 mt-1.5 leading-relaxed">
               Jméno a hodnost mění admin.
             </p>
