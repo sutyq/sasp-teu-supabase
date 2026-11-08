@@ -221,7 +221,6 @@ const Icons = {
   Close: (p) => <Icon {...p} d={["M18 6 6 18", "m6 6 12 12"]} />,
   Shield: (p) => <Icon {...p} d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />,
   Car: (p) => <Icon {...p} d={["M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2", "M14 17H9", "M6.5 17.5A2.5 2.5 0 1 0 6.5 12.5a2.5 2.5 0 1 0 0 5z", "M16.5 17.5A2.5 2.5 0 1 0 16.5 12.5a2.5 2.5 0 1 0 0 5z"]} />,
-  Radio: (p) => <Icon {...p} d={["M4.9 19.1A10 10 0 0 1 4.9 4.9", "M7.8 16.2a6 6 0 0 1 0-8.4", "M12 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M16.2 7.8a6 6 0 0 1 0 8.4", "M19.1 4.9a10 10 0 0 1 0 14.2"]} />,
   Sort: (p) => <Icon {...p} d={["m3 16 4 4 4-4", "M7 20V4", "m21 8-4-4-4 4", "M17 4v16"]} />,
   Pin: (p) => <Icon {...p} d={["M12 17v5", "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"]} />,
   PinFill: (p) => (
@@ -295,8 +294,38 @@ const RANK_META = {
   'Junior': { color: '#64748b', bg: 'bg-slate-600/10',  border: 'border-slate-500/25',  text: 'text-slate-400' },
 };
 
-const APP_VERSION = '0.7';
+const APP_VERSION = '0.8';
 const STORAGE_KEY_PINNED = 'teu_pinned_v1';
+const STORAGE_KEY_SEEN_VERSION = 'teu_seen_version_v1';
+
+function loadSeenVersion() {
+  try { return localStorage.getItem(STORAGE_KEY_SEEN_VERSION); } catch (e) { return null; }
+}
+function saveSeenVersion(v) {
+  try { localStorage.setItem(STORAGE_KEY_SEEN_VERSION, v); } catch (e) {}
+}
+
+// Zmenší nově nahrávanou fotku (delší strana max. maxSide px). Formát zůstává stejný,
+// takže průhledné PNG zůstane průhledné. Při jakékoli chybě nebo když by výsledek
+// nebyl menší, vrátí původní soubor.
+async function downscaleImage(file, maxSide = 1200) {
+  try {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return file;
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    if (scale >= 1) { bmp.close?.(); return file; }
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close?.();
+    const blob = await new Promise(res => canvas.toBlob(res, file.type, 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name, { type: file.type });
+  } catch (e) {
+    return file;
+  }
+}
 
 function loadSet(key) {
   try { const raw = localStorage.getItem(key); return raw ? new Set(JSON.parse(raw)) : new Set(); }
@@ -455,7 +484,56 @@ function ConnectionStatus({ connected, syncing }) {
   );
 }
 
-function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, onRoster, onProfile, connected, syncing }) {
+function AccountMenu({ officer, session, onProfile, onRoster, onAdminPanel, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const pick = (fn) => () => { setOpen(false); fn(); };
+  const itemClass = "w-full flex items-center gap-3 px-4 py-2.5 font-mono text-[11px] uppercase tracking-widest text-left transition hover:bg-sasp-glow/10";
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)}
+              aria-haspopup="menu" aria-expanded={open} title="Účet"
+              className="flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15">
+        <Icons.Shield size={12} className="text-emerald-400" />
+        <span className="hidden md:inline truncate max-w-[120px]">{officer.display_name || session.user.email}</span>
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full mt-2 w-52 z-30 rounded-md glass-strong border border-sasp-glow/25 shadow-[0_0_30px_rgba(59,130,246,0.2)] overflow-hidden">
+          <button role="menuitem" onClick={pick(onProfile)} className={`${itemClass} text-sasp-ice/90`}>
+            <Icons.User size={14} /> Můj profil
+          </button>
+          <button role="menuitem" onClick={pick(onRoster)} className={`${itemClass} text-sasp-ice/90`}>
+            <Icons.Shield size={14} /> Roster
+          </button>
+          {officer.is_admin && (
+            <button role="menuitem" onClick={pick(onAdminPanel)} className={`${itemClass} text-amber-300`}>
+              <Icons.Shield size={14} /> Admin panel
+            </button>
+          )}
+          <button role="menuitem" onClick={pick(onLogout)} className={`${itemClass} text-red-400 border-t border-sasp-glow/10`}>
+            <Icons.LogOut size={14} /> Odhlásit se
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Header({ onChangelog, hasNew, auth, onLogin, onLogout, onAddVehicle, onAdminPanel, onRoster, onProfile, connected, syncing }) {
   const { officer, session } = auth;
   const isOfficer = !!officer;
 
@@ -497,34 +575,9 @@ function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPan
               <Icons.Plus size={14} />
               <span className="hidden sm:inline">Přidat</span>
             </button>
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80">
-              <Icons.Shield size={12} className="text-emerald-400" />
-              <span className="truncate max-w-[120px]">{officer.display_name || session.user.email}</span>
-            </div>
-            <button onClick={onProfile}
-                    className="p-2 glass rounded-md text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15"
-                    title="Můj profil">
-              <Icons.User size={14} />
-            </button>
-            <button onClick={onLogout}
-                    className="p-2 glass rounded-md text-sasp-glow/60 hover:text-red-400 hover:border-red-400/40 transition border border-sasp-glow/15"
-                    title="Odhlásit se">
-              <Icons.LogOut size={14} />
-            </button>
-            <button onClick={onRoster}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border
-                               bg-sasp-glow/10 border-sasp-glow/30 text-sasp-glow hover:bg-sasp-glow/20 hover:border-sasp-glow/60">
-              <Icons.Shield size={14} />
-              <span className="hidden sm:inline">Roster</span>
-            </button>
-            {officer.is_admin && (
-              <button onClick={onAdminPanel}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-[10px] uppercase tracking-widest transition border
-                                 bg-amber-500/10 border-amber-400/40 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400/70">
-                <Icons.Shield size={14} />
-                <span className="hidden sm:inline">Admin</span>
-              </button>
-            )}
+            <AccountMenu officer={officer} session={session}
+                         onProfile={onProfile} onRoster={onRoster}
+                         onAdminPanel={onAdminPanel} onLogout={onLogout} />
           </div>
         ) : (
           <button onClick={onLogin}
@@ -535,9 +588,15 @@ function Header({ onChangelog, auth, onLogin, onLogout, onAddVehicle, onAdminPan
         )}
 
         <button onClick={onChangelog}
-                className="hidden md:flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15">
+                title="Historie změn"
+                className="relative flex items-center gap-2 px-3 py-1.5 glass rounded-md font-mono text-[10px] uppercase tracking-widest text-sasp-glow/70 hover:text-sasp-glow hover:border-sasp-glow/40 transition border border-sasp-glow/15">
           <Icons.Activity size={12} />
-          <span>v{APP_VERSION}</span>
+          <span className="hidden md:inline">v{APP_VERSION}</span>
+          {hasNew && (
+            <span className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-widest bg-emerald-500 text-sasp-black shadow-[0_0_10px_rgba(52,211,153,0.6)]">
+              NOVÉ
+            </span>
+          )}
         </button>
       </div>
 
@@ -601,7 +660,7 @@ function TierResponseRow({ tier, cars }) {
   );
 }
 
-function VehicleImage({ src, alt, className = '' }) {
+function VehicleImage({ src, alt, className = '', onZoom }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   // PNG = transparent bg → contain. JPG/Supabase URL = full image → cover
@@ -622,14 +681,42 @@ function VehicleImage({ src, alt, className = '' }) {
           src={src} alt={alt} loading="lazy" decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => { setErrored(true); setLoaded(true); }}
-          className={`${isTransparent ? 'vehicle-img' : 'vehicle-img-photo'} w-full h-full ${fitClass} rounded-md transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          onClick={onZoom}
+          className={`${isTransparent ? 'vehicle-img' : 'vehicle-img-photo'} w-full h-full ${fitClass} rounded-md transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'} ${onZoom ? 'cursor-zoom-in' : ''}`}
         />
       )}
     </div>
   );
 }
 
-function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdmin, onEdit, onDelete, onHistory }) {
+function ImageLightbox({ image, onClose }) {
+  useEffect(() => {
+    document.body.classList.add('modal-open');
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 md:p-10 bg-black/85 backdrop-blur-sm cursor-zoom-out"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+      role="dialog" aria-label={image.alt}
+    >
+      <button onClick={onClose} aria-label="Zavřít"
+              className="absolute top-4 right-4 p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition">
+        <Icons.Close size={18} />
+      </button>
+      <img src={image.src} alt={image.alt} className="max-w-full max-h-full object-contain rounded-md" />
+    </motion.div>
+  );
+}
+
+function VehicleCard({ v, pinned, onTogglePin, isOfficer, isAdmin, onEdit, onDelete, onHistory, onZoom }) {
   const isNonLocator = !!v.non_locator;
   const tierMeta = TIER_META[v.tier] || TIER_META['A'];
 
@@ -648,9 +735,8 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
       whileHover={{ y: -4 }}
-      className="group relative text-left clip-corners glass glow-hover rounded-lg overflow-hidden cursor-pointer w-full flex flex-col"
+      className="group relative text-left clip-corners glass glow-hover rounded-lg overflow-hidden w-full flex flex-col"
       style={{ borderColor: isNonLocator ? 'rgba(245,158,11,0.35)' : 'rgba(96,165,250,0.15)' }}
-      onClick={onSelect}
     >
       <div className="absolute top-0 left-0 right-0 h-[2px] z-10"
            style={{ background: topStripeBg }} />
@@ -658,7 +744,7 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
       {/* Top-right actions */}
       <div className="absolute top-2 right-2 z-10 flex gap-1">
         {isAdmin && (
-          <button onClick={(e) => { e.stopPropagation(); onHistory(v); }}
+          <button onClick={() => onHistory(v)}
                   className="p-1.5 rounded-md glass border border-sasp-glow/15 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40 transition"
                   title="Poslední změny">
             <Icons.Activity size={14} />
@@ -666,19 +752,19 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
         )}
         {isOfficer && (
           <>
-            <button onClick={(e) => { e.stopPropagation(); onEdit(v); }}
+            <button onClick={() => onEdit(v)}
                     className="p-1.5 rounded-md glass border border-sasp-glow/15 text-sasp-glow/60 hover:text-sasp-glow hover:border-sasp-glow/40 transition"
                     title="Upravit">
               <Icons.Edit size={14} />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(v); }}
+            <button onClick={() => onDelete(v)}
                     className="p-1.5 rounded-md glass border border-sasp-glow/15 text-red-400/70 hover:text-red-400 hover:border-red-400/50 transition"
                     title="Smazat">
               <Icons.Trash size={14} />
             </button>
           </>
         )}
-        <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+        <button onClick={() => onTogglePin()}
                 className="p-1.5 rounded-md glass border border-sasp-glow/15 text-sasp-glow/50 hover:text-sasp-glow hover:border-sasp-glow/40 transition"
                 title={pinned ? 'Odepnout' : 'Připnout'}>
           {pinned ? <Icons.PinFill size={14} className="text-sasp-glow" /> : <Icons.Pin size={14} />}
@@ -690,7 +776,8 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
         {!isNonLocator && (v.tier === 'S+' || v.tier === 'S') && (
           <div className="absolute inset-0 stripes-warn opacity-25 pointer-events-none z-[1]" />
         )}
-        <VehicleImage src={v.image} alt={v.vehicle} className="w-full h-full" />
+        <VehicleImage src={v.image} alt={v.vehicle} className="w-full h-full"
+                      onZoom={v.image ? () => onZoom({ src: v.image, alt: v.vehicle }) : undefined} />
         <div className="absolute top-2 left-2 z-[2]">
           {isNonLocator ? (
             <div className="inline-flex items-center gap-1 px-2 h-6 rounded-md font-mono font-bold text-[10px] tracking-wider uppercase
@@ -706,14 +793,9 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
       </div>
 
       <div className="p-3 md:p-4 space-y-3 flex-1 flex flex-col">
-        <div className="flex items-baseline justify-between gap-2">
-          <h3 className="font-display font-bold text-lg md:text-xl tracking-wide text-sasp-ice truncate" title={v.vehicle}>
-            {v.vehicle}
-          </h3>
-          <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sasp-glow/40 shrink-0">
-            #{String(index + 1).padStart(3, '0')}
-          </span>
-        </div>
+        <h3 className="font-display font-bold text-lg md:text-xl tracking-wide text-sasp-ice break-words">
+          {v.vehicle}
+        </h3>
 
         <div className="space-y-1.5 flex-1">
           {isNonLocator ? (
@@ -755,17 +837,10 @@ function VehicleCard({ v, onSelect, pinned, onTogglePin, index, isOfficer, isAdm
         </div>
 
         {v.notes && (
-          <p className="text-[11px] text-sasp-ice/55 italic clamp-2 leading-relaxed border-l-2 border-sasp-glow/25 pl-2">
+          <p className="text-[11px] text-sasp-ice/70 italic whitespace-pre-line break-words leading-relaxed border-l-2 border-sasp-glow/25 pl-2">
             {v.notes}
           </p>
         )}
-
-        <div className="flex items-center justify-between pt-2 mt-1 border-t border-sasp-glow/10">
-          <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-sasp-glow/50">
-            Detail · spis vozidla
-          </span>
-          <Icons.Crosshair size={12} className="text-sasp-glow/40 group-hover:text-sasp-glow transition" />
-        </div>
       </div>
     </motion.div>
   );
@@ -778,177 +853,6 @@ function SectionTitle({ icon, text }) {
       <h3 className="font-display font-bold text-sm uppercase tracking-[0.3em] text-sasp-glow">{text}</h3>
       <div className="flex-1 h-px bg-gradient-to-r from-sasp-glow/30 to-transparent" />
     </div>
-  );
-}
-
-function VehicleModal({ v, onClose, pinned, onTogglePin, isOfficer, isAdmin, onEdit, onDelete }) {
-  const isNonLocator = !!v.non_locator;
-  const tierMeta = TIER_META[v.tier] || TIER_META['A'];
-  const accentColor = isNonLocator ? '#f59e0b' : tierMeta.color;
-  const heroBgClass = isNonLocator
-    ? 'from-amber-500/20 to-amber-900/5'
-    : `${tierMeta.bgFrom} ${tierMeta.bgTo}`;
-
-  useEffect(() => {
-    document.body.classList.add('modal-open');
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.body.classList.remove('modal-open');
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/70 backdrop-blur-sm"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose}
-    >
-      <motion.div
-        onClick={(e) => e.stopPropagation()}
-        initial={{ opacity: 0, scale: 0.92, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto clip-corners glass-strong rounded-lg shadow-[0_0_60px_rgba(59,130,246,0.25)]"
-        style={{ borderColor: isNonLocator ? 'rgba(245,158,11,0.4)' : 'rgba(96,165,250,0.3)' }}
-      >
-        <div className="absolute top-0 left-0 right-0 h-[2px]"
-             style={{ background: `linear-gradient(90deg, transparent, ${accentColor}, ${accentColor}, transparent)` }} />
-
-        <div className="sticky top-0 z-10 flex items-center justify-between p-4 md:px-6 border-b border-sasp-glow/15 bg-sasp-carbon/85 backdrop-blur">
-          <div className="flex items-center gap-3">
-            <Icons.Shield size={18} className="text-sasp-glow" />
-            <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/70">Detail vozidla · TEU</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {isOfficer && (
-              <>
-                <button onClick={() => onEdit(v)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
-                  <Icons.Edit size={12} />
-                  <span>Upravit</span>
-                </button>
-                <button onClick={() => onDelete(v)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-red-400/30 font-mono text-[10px] uppercase tracking-widest text-red-400/90 hover:text-red-400 hover:border-red-400/60 transition">
-                  <Icons.Trash size={12} />
-                  <span>Smazat</span>
-                </button>
-              </>
-            )}
-            <button onClick={onTogglePin}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-md glass border border-sasp-glow/20 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/80 hover:text-sasp-glow hover:border-sasp-glow/50 transition">
-              {pinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
-              <span>{pinned ? 'Připnuto' : 'Připnout'}</span>
-            </button>
-            <button onClick={onClose}
-                    className="p-2 rounded-md glass border border-sasp-glow/20 text-sasp-glow/80 hover:text-red-400 hover:border-red-400/40 transition"
-                    aria-label="Zavřít">
-              <Icons.Close size={16} />
-            </button>
-          </div>
-        </div>
-
-        <div className={`relative bg-gradient-to-br ${heroBgClass} p-6 md:p-8 border-b border-sasp-glow/10`}>
-          {!isNonLocator && <div className="absolute inset-0 stripes-warn opacity-20" />}
-          <div className="relative grid md:grid-cols-2 gap-6 items-center">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                {isNonLocator ? (
-                  <div className="inline-flex items-center gap-2 px-3 h-9 rounded-md font-mono font-bold text-sm tracking-wider uppercase
-                                  bg-amber-500/25 border border-amber-400/55 text-amber-200"
-                       style={{ boxShadow: '0 0 14px rgba(245,158,11,0.45)' }}>
-                    <Icons.AlertTriangle size={14} />
-                    Non-locator
-                  </div>
-                ) : (
-                  <TierBadge tier={v.tier} size="lg" label />
-                )}
-                <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-sasp-glow/60">
-                  {isNonLocator ? 'Mimo lokátor systém' : 'Klasifikace hrozby'}
-                </span>
-              </div>
-              <h2 className="font-display font-bold text-4xl md:text-5xl tracking-wide headline-emboss leading-tight text-glow">
-                {v.vehicle}
-              </h2>
-              <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-sasp-glow/60">
-                <span>{isNonLocator ? 'Non-locator profil' : 'Profil lokátoru'}</span>
-                <span className="text-sasp-glow/30">·</span>
-                <span>Pursuit-grade</span>
-                <span className="text-sasp-glow/30">·</span>
-                <span className="text-sasp-glow">ID {v.id}</span>
-              </div>
-            </div>
-
-            <div className="relative h-56 md:h-72 flex items-center justify-center p-2">
-              <VehicleImage src={v.image} alt={v.vehicle} className="w-full h-full" />
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6 md:p-8 space-y-8">
-          {isNonLocator ? (
-            <section>
-              <SectionTitle icon={<Icons.Radio size={14} />} text="Response jednotky" />
-              <p className="text-[11px] font-mono uppercase tracking-widest text-sasp-glow/50 mb-4">
-                Doporučená response auta. Vozidlo není součástí lokátor systému, takže bez tier rozlišení.
-              </p>
-              {(!v.responses || v.responses.length === 0 || !v.responses[0]?.cars?.length) ? (
-                <div className="rounded-md glass p-4 border border-sasp-glow/15 text-sasp-glow/50 font-mono text-[11px] uppercase tracking-widest italic">
-                  Žádné response jednotky neuvedeny
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {(v.responses[0].cars || []).map((car, i) => (
-                    <motion.span key={i}
-                                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                                 transition={{ delay: 0.04 * i }}
-                                 className="px-3 py-1.5 rounded-md font-mono text-xs uppercase tracking-wider font-bold
-                                            bg-amber-500/15 border border-amber-400/40 text-amber-200"
-                                 style={{ boxShadow: '0 0 12px rgba(245,158,11,0.2)' }}>
-                      {car}
-                    </motion.span>
-                  ))}
-                </div>
-              )}
-            </section>
-          ) : (
-            <section>
-              <SectionTitle icon={<Icons.Radio size={14} />} text="Doporučená response" />
-              <p className="text-[11px] font-mono uppercase tracking-widest text-sasp-glow/50 mb-4">
-                Pro daný tier suspect vozidla použij níže uvedené response jednotky.
-              </p>
-              <div className="space-y-2">
-                {(v.responses || []).map((r, i) => (
-                  <motion.div key={r.tier}
-                              initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: 0.05 * i }}>
-                    <TierResponseRow tier={r.tier} cars={r.cars || []} />
-                  </motion.div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {v.notes && (
-            <section>
-              <SectionTitle icon={<Icons.AlertTriangle size={14} />} text="Poznámky z terénu" />
-              <div className="rounded-md glass p-4 border-l-4 border-l-sasp-glow border border-sasp-glow/15">
-                <p className="text-sasp-ice/90 leading-relaxed italic">{v.notes}</p>
-              </div>
-            </section>
-          )}
-
-          {isAdmin && (
-            <section>
-              <SectionTitle icon={<Icons.Activity size={14} />} text="Poslední změny" />
-              <VehicleHistoryList vehicleId={v.id} />
-            </section>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
   );
 }
 
@@ -3258,9 +3162,10 @@ function FleetEditor({ open, item, existingNames, onClose, onSaved }) {
         const ext = imageFile.name.split('.').pop().toLowerCase();
         const slug = nameTrim.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         const path = `fleet-${slug}-${Date.now()}.${ext}`;
+        const toUpload = await downscaleImage(imageFile);
         const { error: upErr } = await supabase.storage
           .from(CFG.STORAGE_BUCKET || 'vehicles')
-          .upload(path, imageFile, { cacheControl: '3600', upsert: false });
+          .upload(path, toUpload, { cacheControl: '3600', upsert: false });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage
           .from(CFG.STORAGE_BUCKET || 'vehicles')
@@ -3442,6 +3347,20 @@ function FleetEditor({ open, item, existingNames, onClose, onSaved }) {
 // ============================================================
 const CHANGELOG = [
   {
+    version: '0.8',
+    date: '8. 11. 2026',
+    changes: [
+      { type: 'change', text: 'Karta vozidla ukazuje vše na první pohled: poznámka se zobrazí celá a detail vozidla (rozklik) byl odstraněn.' },
+      { type: 'new', text: 'Klik na fotku vozidla ji zvětší na celou obrazovku. Zavřeš klikem mimo, křížkem nebo klávesou Esc.' },
+      { type: 'change', text: 'Z karet zmizelo pořadové číslo (#001), které nic neznamenalo.' },
+      { type: 'change', text: 'Menu účtu: Můj profil, Roster, Admin panel a Odhlásit se jsou teď pohromadě pod jedním tlačítkem s tvým jménem.' },
+      { type: 'new', text: 'Při hledání a filtrování se ukazuje počet výsledků (např. 12 z 93). Když nic nevyhovuje, tlačítko Vymazat filtry vrátí vše zpět.' },
+      { type: 'new', text: 'Štítek NOVÉ u tlačítka verze, dokud si nepřečteš nové změny.' },
+      { type: 'perf', text: 'Nově nahrané fotky se před uložením zmenší (max. 1200 px na delší straně), takže se rychleji načítají. Průhledné PNG zůstane průhledné.' },
+      { type: 'security', text: 'Databáze: funkci zapisující do activity logu už nelze volat zvenčí, zapisuje jen databázový trigger.' },
+    ],
+  },
+  {
     version: '0.7',
     date: '4. 11. 2026',
     changes: [
@@ -3519,7 +3438,7 @@ const CHANGE_TYPE_META = {
   security: { label: 'SECURITY', color: '#ef4444' },
 };
 
-function ChangelogModal({ open, onClose }) {
+function ChangelogModal({ open, onClose, highlightLatest }) {
   useEffect(() => {
     if (!open) return;
     document.body.classList.add('modal-open');
@@ -3575,6 +3494,11 @@ function ChangelogModal({ open, onClose }) {
                     Aktuální
                   </span>
                 )}
+                {ri === 0 && highlightLatest && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-emerald-500 text-sasp-black">
+                    Nové
+                  </span>
+                )}
               </div>
               <ul className="space-y-2 pl-2 border-l-2 border-sasp-glow/20">
                 {release.changes.map((c, ci) => {
@@ -3590,6 +3514,11 @@ function ChangelogModal({ open, onClose }) {
                         {meta.label}
                       </span>
                       <span className="text-sm text-sasp-ice/85 leading-relaxed">{c.text}</span>
+                      {ri === 0 && highlightLatest && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-widest font-bold bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 shrink-0 mt-0.5">
+                          Nové
+                        </span>
+                      )}
                     </li>
                   );
                 })}
@@ -3919,11 +3848,19 @@ function App() {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({ tier: null, response: null });
   const [sortBy, setSortBy] = useState('tier');
-  const [selected, setSelected] = useState(null);
+  const [zoomImage, setZoomImage] = useState(null);
   const [pinned, setPinned] = useState(() => loadSet(STORAGE_KEY_PINNED));
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-  const [cmdOpen, setCmdOpen] = useState(false);  // legacy, unused
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [seenVersion, setSeenVersion] = useState(loadSeenVersion);
+  const [changelogFresh, setChangelogFresh] = useState(false);
+  const hasNewVersion = seenVersion !== APP_VERSION;
+
+  function openChangelog() {
+    setChangelogFresh(hasNewVersion);
+    setChangelogOpen(true);
+    if (hasNewVersion) { saveSeenVersion(APP_VERSION); setSeenVersion(APP_VERSION); }
+  }
   const [loginOpen, setLoginOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorVehicle, setEditorVehicle] = useState(null);  // null = add, obj = edit
@@ -4005,9 +3942,10 @@ function App() {
       if (imageFile) {
         const ext = imageFile.name.split('.').pop().toLowerCase();
         const path = `${form.id}-${Date.now()}.${ext}`;
+        const toUpload = await downscaleImage(imageFile);
         const { error: upErr } = await supabase.storage
           .from(CFG.STORAGE_BUCKET || 'vehicles')
-          .upload(path, imageFile, { cacheControl: '3600', upsert: false });
+          .upload(path, toUpload, { cacheControl: '3600', upsert: false });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage
           .from(CFG.STORAGE_BUCKET || 'vehicles')
@@ -4050,7 +3988,6 @@ function App() {
       const { error } = await supabase.from('vehicles').delete().eq('id', v.id);
       if (error) throw error;
       showToast(`Smazáno: ${v.vehicle}`, 'success');
-      setSelected(null);
     } catch (e) {
       showToast('Chyba: ' + e.message, 'error');
     } finally {
@@ -4162,7 +4099,8 @@ function App() {
   return (
     <div className="relative min-h-screen">
       <Header
-        onChangelog={() => setChangelogOpen(true)}
+        onChangelog={openChangelog}
+        hasNew={hasNewVersion}
         auth={auth}
         onLogin={() => setLoginOpen(true)}
         onLogout={handleLogout}
@@ -4214,9 +4152,18 @@ function App() {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.25em]">
               <span className="text-sasp-glow/60">
-                <span className="text-sasp-glow text-sm font-bold">{filtered.length}</span>
-                <span className="mx-1.5">/</span>
-                <span>{vehicles.length} záznamů</span>
+                {filtered.length === vehicles.length ? (
+                  <>
+                    <span className="text-sasp-glow text-sm font-bold">{vehicles.length}</span>
+                    <span className="ml-1.5">záznamů</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sasp-glow text-sm font-bold">{filtered.length}</span>
+                    <span className="mx-1.5">z</span>
+                    <span>{vehicles.length} záznamů</span>
+                  </>
+                )}
               </span>
               {pinned.size > 0 && (
                 <>
@@ -4285,17 +4232,17 @@ function App() {
             {(query || filters.tier || filters.response || showPinnedOnly) && (
               <button onClick={() => { setQuery(''); setFilters({ tier: null, response: null }); setShowPinnedOnly(false); }}
                       className="mt-4 px-4 py-2 rounded-md glass border border-sasp-glow/30 font-mono text-[11px] uppercase tracking-widest text-sasp-glow hover:border-sasp-glow/60 transition">
-                Resetovat
+                Vymazat filtry
               </button>
             )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
-            {filtered.map((v, i) => (
+            {filtered.map((v) => (
               <VehicleCard
-                key={v.id} v={v} index={i}
+                key={v.id} v={v}
                 pinned={pinned.has(v.id)} onTogglePin={() => togglePin(v.id)}
-                onSelect={() => setSelected(v)}
+                onZoom={setZoomImage}
                 isOfficer={isOfficer}
                 isAdmin={isAdmin}
                 onEdit={(veh) => { setEditorVehicle(veh); setEditorOpen(true); }}
@@ -4317,14 +4264,7 @@ function App() {
       </main>
 
       <AnimatePresence>
-        {selected && (
-          <VehicleModal v={selected} onClose={() => setSelected(null)}
-                        pinned={pinned.has(selected.id)} onTogglePin={() => togglePin(selected.id)}
-                        isOfficer={isOfficer}
-                        isAdmin={isAdmin}
-                        onEdit={(v) => { setSelected(null); setEditorVehicle(v); setEditorOpen(true); }}
-                        onDelete={(v) => { setSelected(null); setConfirmDelete(v); }} />
-        )}
+        {zoomImage && <ImageLightbox image={zoomImage} onClose={() => setZoomImage(null)} />}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -4332,7 +4272,7 @@ function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {changelogOpen && <ChangelogModal open={changelogOpen} onClose={() => setChangelogOpen(false)} />}
+        {changelogOpen && <ChangelogModal open={changelogOpen} highlightLatest={changelogFresh} onClose={() => setChangelogOpen(false)} />}
       </AnimatePresence>
 
       <AnimatePresence>
